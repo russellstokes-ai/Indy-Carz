@@ -1,0 +1,17 @@
+name: ROM prep tests (synthetic data only)
+
+on:
+  push:
+    branches: [main, development/**]
+  pull_request:
+
+jobs:
+  romprep-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test original ROM mapping utilities without ROM content
+        run: python -m unittest discover -s tests -v
