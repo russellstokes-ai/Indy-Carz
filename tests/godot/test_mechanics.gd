@@ -7,6 +7,7 @@ extends SceneTree
 const Wheel = preload("res://scripts/mechanics/ArcadeWheelInput.gd")
 const Steering = preload("res://scripts/mechanics/ArcadeSteeringState.gd")
 const Pedal = preload("res://scripts/mechanics/ArcadePedalInput.gd")
+const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
 
 var _failed: int = 0
@@ -25,6 +26,7 @@ func _initialize() -> void:
     _test_original_steering_accumulators()
     _test_original_accelerator()
     _test_exhaustive_input_arithmetic()
+    _test_original_drive_byte_stages()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -122,6 +124,26 @@ func _test_exhaustive_input_arithmetic() -> void:
                 var output: Dictionary = Pedal.response(raw, factor, bias)
                 _verify(output["response"] == expected,
                         "pedal Z80 math parity, raw=%d factor=%d bias=%d" % [raw, factor, bias])
+
+
+func _test_original_drive_byte_stages() -> void:
+    _verify(Drive.exceptional_input_branch(126) == 47,
+            "original 7039 special branch multiplier")
+    _verify(Drive.weighted_car_output(126, 150) == 232,
+            "original 709C weighted output")
+    _verify(Drive.weighted_car_output(126, 200) == 255,
+            "original 709C saturates via carry helper")
+
+    for input_byte in range(256):
+        var first_expected: int = ((input_byte * 0x60) + 128) >> 8
+        _verify(Drive.exceptional_input_branch(input_byte) == first_expected,
+                "original X-ROM special-branch input %d" % input_byte)
+        for original_bias in [0, 127, 255]:
+            var second_expected: int = mini(
+                255, ((input_byte * 0xA6 + 128) >> 8) + original_bias
+            )
+            _verify(Drive.weighted_car_output(input_byte, original_bias) == second_expected,
+                    "original weighted-byte input %d bias %d" % [input_byte, original_bias])
 
 
 func _test_portrait_camera() -> void:
