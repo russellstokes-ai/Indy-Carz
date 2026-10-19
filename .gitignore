@@ -1,0 +1,25 @@
+# Godot and local artifacts
+.godot/
+.import/
+.export/
+*.apk
+*.aab
+*.keystore
+*.jks
+build/
+dist/
+__pycache__/
+*.pyc
+
+# Never commit original ROMs or binary-derived artefacts
+reference_private/
+roms/
+original_assets/
+rom_dumps/
+*.zip
+*.rom
+*.bin
+*.nes
+*.chd
+*.z80
+*.trace
