@@ -29,10 +29,10 @@ Critical: ROM 152/153 use MAME ROM_CONTINUE for their second halves; master ROM 
 
 Provide a locally held 1991 arcade rev 1 ROM set named indyheat.zip. The recovery script checks the **14 program/X-ROM files by length, CRC32 and SHA1** before producing analysis-only local images:
 
-\`\`\`bash
+```bash
 python tools/arcade_rom_recovery.py /path/to/indyheat.zip --out local/rom-recovery
 python -m unittest discover -s tests -v
-\`\`\`
+```
 
 Outputs:
 - master.mame_raw.bin / master.mame_runtime.bin
@@ -46,20 +46,20 @@ All outputs remain local; the repo ignores local/ and roms/. These reconstruct M
 
 Run MAME (debugger-enabled build) with the original locally provided ROM in MAME's ROM path:
 
-\`\`\`text
+```text
 mame indyheat -debug
-\`\`\`
+```
 
 Useful debugger commands (see https://docs.mamedev.org/debugger/execution.html and https://docs.mamedev.org/debugger/memory.html):
 
-\`\`\`text
+```text
 trace master.tr,master
 trace slave.tr,slave
 trace off,master
 trace off,slave
 dasm master_visible.asm,0,10000,1,master
 dasm slave_visible.asm,0,10000,1,slave
-\`\`\`
+```
 
 **Do not run unbounded all-session traces:** use short, repeatable windows, because Z80 tracing is extremely verbose. MAME exposes currently mapped CPU memory, not every possible bank at once. Trace both CPUs and the shared-memory interactions before deciding which chip owns physics and AI. Record the active bank/control register for every code address.
 
