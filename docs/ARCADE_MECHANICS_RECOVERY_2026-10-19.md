@@ -1,0 +1,99 @@
+# Indy Carz — Recovering original 1991 arcade mechanics
+
+**Evidence record, 19 October 2026.** Primary input: user-supplied original
+`indyheat.zip`, whose 27 member checksums were verified against MAME's ROM
+manifest. Machine references: MAME `leland.cpp`, `leland_m.cpp`,
+`leland_v.cpp`. Local decoded binaries and complete listings are deliberately
+excluded from this public repository.
+
+## Recovered directly from original Z80 code
+
+| CPU address, bank | Observed original operation | Confidence |
+|---|---|---|
+| Master fixed `0C4A` | Loop across physical controls for three players, corresponding to car records `E080/E180/E280` | Verified statically |
+| Master fixed `0D6A` | Decode 5-bit dial phase delta through 32-entry response table at `0DCD`; check encoder's direction bit; output signed sample into indexed car record | Verified statically |
+| Master fixed `0D89` | Process active-low input transitions and write per-car input state | Verified statically; exact button semantics require dynamic trace |
+| Master bank 0 `341E` | Read indexed steering sample (IX+122), build X-ROM slot-0 word address using low byte `7F`, read X-ROM upper byte and double it before applying accumulator/carry branches | Verified statically, downstream vehicle behaviour incomplete |
+| Master bank 3 `7519` | Read indexed steering state (IX+121), update indexed field (IX+123) with overflow-dependent branches | Verified statically; game-state interpretation not yet complete |
+| Master fixed `145F/1490/14C1` | Jump through inline 16-bit addresses into master banks 2/3/4 with automatic bank restore | Verified statically |
+| Master bank 0 `83D5` | Initialises indexed records in 0x100-byte steps, with five active racer records and an additional `E580` initialization slot | Verified statically |
+
+### Input bytes, faithfully recovered
+
+- Five racer state record bases, `IX`: `E080,E180,E280,E380,E480`.
+- Three physical wheel inputs: master I/O `00,01,02`.
+- Three turbo-button inputs: master I/O `0D,0E,0F` (button identity established by MAME input mapping; full effect has not yet been traced).
+- The hardware's 8-bit direction/5-bit phase wheel encoding is documented by
+  MAME's `dial_compute_value` in `leland_m.cpp`.
+- The game's `0D6A` code produces signed wheel-response values from a
+  **32-entry** table, ranging `-62..+62` for valid original input samples.
+- The game stores current steering sample at car-record offset `+122` (`0x7A`),
+  and conditionally stores its primary copy at offset `+121` (`0x79`).
+  Another routine updates car-record offset `+123` (`0x7B`). Calling that
+  final vehicle heading without recovering its uses would be premature.
+
+The independently written Godot `scripts/mechanics/ArcadeWheelInput.gd`
+implements precisely the MAME encoder + original ROM response lookup. It does
+**not** fabricate car acceleration, traction, steering yaw, opponent AI or turbo.
+
+### X-ROM steering data confirmed
+
+At master bank-0 address `341E`, the code uses:
+
+```text
+X-ROM slot 0 word address = ((signed response & 0xFF) << 8) | 0x7F
+Read X-ROM word's upper byte, then double it as 8-bit arithmetic
+```
+
+All **41 distinct signed steering sample values** reachable from the ROM's
+32-entry lookup were checked against the actual reconstructed X-ROM. The X-ROM
+upper byte matched `n-1` for positive `n`, or `n` otherwise, interpreted
+modulo 256; the doubled signed outputs range from `-124` to `+122`.
+This is an observation for these samples and this X-ROM address; it is **not**
+the full movement/heading formula. Original accumulator, threshold, collision,
+upgrades and tyre calculations still require analysis.
+
+Run the optional verifier privately with:
+
+```bash
+python tools/arcade_logic_probe.py local/rom-recovery/master.mame_runtime.bin
+python tools/arcade_steering_xrom.py \
+  local/rom-recovery/master.mame_runtime.bin \
+  local/rom-recovery/xrom.mame_runtime.bin
+```
+
+### Bank switching clarified
+
+The `CALL` instruction at fixed `112C`, for example, is followed by an
+inline target word and transfers through trampoline `145F` to master
+**bank 2, address 2012**, which jumps to a real routine at `35A7`.
+
+A naive linear disassembly wrongly treats inline destination bytes as code,
+or reads the wrong bank as the target. Reconstructing the original bank
+mapping is essential for all further mechanic recovery. Across the fixed
+trampoline table beginning at `111D`, **25 distinct wrappers** were located
+for bank 2 (5), bank 3 (17) and bank 4 (3). These are static findings, not
+proof that every entry runs during racing.
+
+## Scope still open
+
+1. **Original runtime traces** under debugger-enabled MAME for input→RAM state
+   changes, AI loops, speed, collision, fuel, turbo and pit events.
+2. Recover and verify car movement and collision routine, upgrade impacts
+   and AI strategy across all active ROM banks.
+3. Recover per-race QRAM tilemaps and wall, lane, checkpoint and pit-zone
+   geometry without retaining/releasing original track artwork.
+4. Implement *verified* physics in the Godot project and compare deterministic
+   traces against the original arcade reference.
+5. Build upgraded original artwork, the approved smooth portrait camera pan,
+   Android controls, menus and APK once core mechanic parity is demonstrated.
+
+**No arbitrary 5% slowdown, generic replacement physics, track rotation or
+track redesign is authorised.**
+
+## Validation
+
+- Pure Python synthetic regression suite runs in GitHub Actions without ROMs.
+- Godot adapter is written but a Godot runtime has **not** been executed here.
+- Numeric extraction has been exercised locally on verified original arcade
+  ROM data; it does **not** demonstrate a completed game.
