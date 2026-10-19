@@ -3,13 +3,13 @@ name: ROM recovery tests
 on:
   push:
     paths:
-      - "tools/arcade_rom_recovery.py"
-      - "tests/test_arcade_rom_recovery.py"
+      - "tools/*.py"
+      - "tests/*.py"
       - ".github/workflows/rom-recovery-tests.yml"
   pull_request:
     paths:
-      - "tools/arcade_rom_recovery.py"
-      - "tests/test_arcade_rom_recovery.py"
+      - "tools/*.py"
+      - "tests/*.py"
       - ".github/workflows/rom-recovery-tests.yml"
 
 jobs:
