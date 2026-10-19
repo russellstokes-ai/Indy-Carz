@@ -1,0 +1,14 @@
+# Local reverse-engineering inputs and derivatives (never commit)
+/local/
+/roms/
+/recovery-output/
+/tools/recovery/input/
+/tools/recovery/output/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Godot temporary build/cache output
+.godot/
