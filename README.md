@@ -14,9 +14,9 @@ A Godot 4 mobile-first overhead arcade racer inspired by the **1991 Indy Heat ar
 
 ## Development rule
 
-**Never label approximated physics as arcade-faithful.** Any mechanic must have a recorded reference observation or be marked `UNVERIFIED`. Avoid replacing game rules with third-party template physics. A clean-room implementation is preferred to committing original ROM binaries or proprietary source/assets.
+**Never label approximated physics as arcade-faithful.** Any mechanic must have a recorded reference observation or be marked `UNVERIFIED`. Avoid replacing game rules with third-party template physics. Prioritise recovery and faithful porting of verified arcade routines into a native Godot mechanics library; no ROM binaries or extracted proprietary code are committed. Assess reuse rights separately before any commercial release.
 
-See [docs/ARCADE_FIDELITY_SPEC.md](docs/ARCADE_FIDELITY_SPEC.md) for the baseline and [docs/REFERENCE_CAPTURE_CHECKLIST.md](docs/REFERENCE_CAPTURE_CHECKLIST.md) for the evidence and extraction process.
+See [the ROM decompile/recompile workstream](docs/ARCADE_BINARY_PORT_PLAN.md) and the [private ROM preparation utility](tools/prepare_indyheat_rom.py).
 
 ## Project structure
 
@@ -29,7 +29,7 @@ See [docs/ARCADE_FIDELITY_SPEC.md](docs/ARCADE_FIDELITY_SPEC.md) for the baselin
 
 ## Current status
 
-Repository initialisation. No arcade mechanics have been extracted or verified yet; there is no claim that the initial project is a finished or authentic playable port.
+Repository initialized; a ROM layout verifier and bank-image preparation script are in a draft PR. No arcade game program binaries were provided or decompiled; no original game mechanics or APK are yet built.
 
 ## Legal / assets
 
