@@ -24,6 +24,7 @@ func _initialize() -> void:
     _test_original_wheel()
     _test_original_steering_accumulators()
     _test_original_accelerator()
+    _test_exhaustive_input_arithmetic()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -71,6 +72,56 @@ func _test_original_accelerator() -> void:
     _verify(Pedal.response(255, 255, 255)["response"] == 126, "pedal saturation")
     var timeout: Dictionary = Pedal.response(0, 0, 0, true)
     _verify(timeout["response"] == 126 and timeout["timeout"], "pedal timeout")
+
+
+func _test_exhaustive_input_arithmetic() -> void:
+    # CI-level independent reference for the verified Z80 math, without ROMs.
+    # 41 signed steering inputs x 256 states x 2 original code paths.
+    var samples: Array[int] = [0]
+    for magnitude in [12, 20, 26, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62]:
+        samples.append(-magnitude)
+        samples.append(magnitude)
+
+    for path in [Steering.Path.XROM_BANK_0, Steering.Path.DIRECT_BANK_3]:
+        for input_steer in samples:
+            for state in range(256):
+                var drive: int = 0
+                var bias: int = 0
+                if path == Steering.Path.XROM_BANK_0:
+                    var upper: int = ((input_steer - 1) if input_steer > 0 else input_steer) & 255
+                    drive = (upper * 2) & 255
+                    bias = 4
+                else:
+                    drive = (input_steer * 2) & 255
+                    bias = 8
+                var unwrapped: int = drive + state
+                var expected: int = unwrapped & 255
+                var boundary: bool = (((drive & 128) != 0) != (unwrapped > 255))
+                if boundary:
+                    expected ^= 128
+                elif (expected & 128) != 0:
+                    expected = (expected - bias) & 255
+                else:
+                    expected = (expected + bias) & 255
+
+                var actual: Dictionary = Steering.advance(input_steer, state, path)
+                _verify(actual["state_byte"] == expected and actual["overflow_branch"] == boundary,
+                        "steering opcode-math parity, path=%d input=%d state=%d" % [path, input_steer, state])
+
+    # Every unsigned 8x8 X-ROM multiply pair, across representative original
+    # input-bias values. The private original X-ROM was exhaustively checked
+    # against this independent mathematical formula before commit.
+    for raw in range(256):
+        for factor in range(256):
+            var product: int = ((raw * factor) + 128) >> 8
+            for bias in [0, 254, 255]:
+                var summed: int = product + bias
+                var expected: int = 0
+                if summed >= 256:
+                    expected = mini((summed - 256) * 2, 0x7E)
+                var output: Dictionary = Pedal.response(raw, factor, bias)
+                _verify(output["response"] == expected,
+                        "pedal Z80 math parity, raw=%d factor=%d bias=%d" % [raw, factor, bias])
 
 
 func _test_portrait_camera() -> void:
