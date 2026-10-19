@@ -1,6 +1,6 @@
 # Indy Carz — Original arcade ROM decompilation/reimplementation workflow
 
-**Status 2026-10-19:** hardware, memory layout and original input mapping confirmed from MAME; **original proprietary ROMs not provided**; no extracted physics constants or routines claimed. This is *not* a finished decompilation or a verified Godot gameplay port.
+**Status 2026-10-19:** user-provided arcade ROM verified locally and master/slave/X-ROM images reconstructed. Six-plane background tile graphics decoded. **No physics constants or gameplay routines are verified as recovered or ported yet.** See [actual extraction record](ROM_INSPECTION_2026-10-19.md). This is *not* a finished decompilation or a verified Godot gameplay port.
 
 ## Principle
 
@@ -27,7 +27,7 @@ Critical: ROM 152/153 use MAME ROM_CONTINUE for their second halves; master ROM 
 
 ## Stage 1 — Reconstruct program data
 
-Provide a locally held 1991 arcade rev 1 ROM set named indyheat.zip. The recovery script checks the **14 program/X-ROM files by length, CRC32 and SHA1** before producing analysis-only local images:
+The user has now supplied a matching 1991 arcade rev 1 ROM set, verified locally. For a fresh local run, provide a locally held copy named indyheat.zip. The recovery script checks the **14 program/X-ROM files by length, CRC32 and SHA1** before producing analysis-only local images:
 
 ```bash
 python tools/arcade_rom_recovery.py /path/to/indyheat.zip --out local/rom-recovery
@@ -90,7 +90,7 @@ The original track geometry must be reconstructed without reusing original graph
 
 Translate verified algorithms into *new* Godot 4 scripts using deterministic fixed-step updates. No original ROM, machine-code binary, or proprietary source will be linked or compiled into the released application.
 
-**Approved departure:** pace approximately 5% slower than the arcade reference. Do this in a coherent simulation-speed or tuned-motion adaptation with matched AI, turbo, cornering and collision response. It must not become a separate redesign of gameplay. Portrait view uses gentle speed-aware panning of the near-original track geometry, never squeezing or rotating circuits.
+**Fidelity requirement:** preserve the original racing speed and timing unless the user explicitly authorises a change after testing. Do not introduce an unapproved 5% slowdown. Portrait view uses gentle speed-aware panning of the near-original track geometry, never squeezing or rotating circuits.
 
 Record reproducible input scenarios, arcade trace data (kept local), and Godot outputs in a delta/acceptance report. Do not claim exact parity without passing measured numerical checks.
 
