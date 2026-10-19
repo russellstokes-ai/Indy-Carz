@@ -8,6 +8,8 @@ const Wheel = preload("res://scripts/mechanics/ArcadeWheelInput.gd")
 const Steering = preload("res://scripts/mechanics/ArcadeSteeringState.gd")
 const Pedal = preload("res://scripts/mechanics/ArcadePedalInput.gd")
 const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
+const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
+const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
 
 var _failed: int = 0
@@ -27,6 +29,7 @@ func _initialize() -> void:
     _test_original_accelerator()
     _test_exhaustive_input_arithmetic()
     _test_original_drive_byte_stages()
+    _test_original_car_state_bridge()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -144,6 +147,39 @@ func _test_original_drive_byte_stages() -> void:
             )
             _verify(Drive.weighted_car_output(input_byte, original_bias) == second_expected,
                     "original weighted-byte input %d bias %d" % [input_byte, original_bias])
+
+
+func _test_original_car_state_bridge() -> void:
+    var record = Car.new()
+    _verify(record.snapshot_bytes().size() == 0x100, "original car-record length")
+    _verify(Car.racer_ram_base(0) == 0xE080, "first arcade racer address")
+    _verify(Car.racer_ram_base(4) == 0xE480, "fifth arcade racer address")
+
+    record.write_u8(Car.FIELD_PEDAL_FACTOR, 255)
+    record.write_u8(Car.FIELD_PEDAL_BIAS, 255)
+    var bridge = InputBridge.new()
+    var accel: Dictionary = bridge.sample_original_pedal(2, record)
+    _verify(accel["response"] == 2, "original pedal bridge response")
+    _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 2,
+            "original pedal writes byte IX+$57")
+
+    var wheel: Dictionary = bridge.sample_original_wheel(0, 1, record)
+    _verify(wheel["steering_response"] == -12, "original steering bridge response")
+    _verify(record.read_i8(Car.FIELD_STEERING_SAMPLE) == -12,
+            "original steering sample reads as signed byte")
+    _verify(record.read_u8(Car.FIELD_STEERING_PRIMARY) == 0,
+            "conditional original steering primary field untouched")
+
+    bridge.sample_original_pedal(0, record, true)
+    _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 0x7E,
+            "original pedal timeout response")
+    _verify((record.read_u8(Car.FIELD_PEDAL_TIMEOUT_FLAG) & 2) == 2,
+            "original pedal timeout sets bit 1")
+
+    var copy: PackedByteArray = record.snapshot_bytes()
+    copy[Car.FIELD_PEDAL_RESPONSE] = 0
+    _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 0x7E,
+            "debug snapshots cannot mutate original live record")
 
 
 func _test_portrait_camera() -> void:
