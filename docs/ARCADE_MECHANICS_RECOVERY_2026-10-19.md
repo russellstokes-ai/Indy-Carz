@@ -75,6 +75,49 @@ trampoline table beginning at `111D`, **25 distinct wrappers** were located
 for bank 2 (5), bank 3 (17) and bank 4 (3). These are static findings, not
 proof that every entry runs during racing.
 
+## Further verified numeric stages — pedal and drive-byte arithmetic
+
+- Master bank-0 **$67B5–$67D5** (pedal): original 8-bit analogue pedal,
+  car-record offsets IX+$58 and IX+$59, X-ROM slot-1 multiplication,
+  threshold and saturation into car-record offset IX+$57.
+  Original X-ROM multiplication is exactly
+  `(left * right + 128) >> 8` over **all 65,536 8-bit input pairs**.
+  A bounded original Z80 interpreter checked **41,536 pedal cases** with zero
+  mismatches against the independently reconstructed formula.
+  Port: `scripts/mechanics/ArcadePedalInput.gd`.
+
+- Master bank-0 **$7039–$7043**: original X-ROM multiplies its input
+  byte by `0x60` (96), rounding at half of a 256th, and assigns register B.
+  The preceding car-state counter at $7036 is not included in this stage.
+  Port: `ArcadeDriveStages.exceptional_input_branch`.
+
+- Master bank-0 **$709C–$70AB**: original X-ROM multiplies B by
+  `0xA6` (166), adds car-record field IX+$54, and calls the
+  `$0A9C` saturation helper on 8-bit carry; exact outcome is
+  `min(255, ((B * 166 + 128) >> 8) + car_field_54)`.
+  **65,536 value/field combinations**, plus **256 preceding branch
+  inputs**, have been validated against original ROM/X-ROM data.
+  The bounded opcode verifier is
+  `tools/arcade_drive_opcode_parity.py` and port is
+  `scripts/mechanics/ArcadeDriveStages.gd`.
+
+These are verified original arithmetic **subroutines**, not complete vehicle
+acceleration, traction or fuel logic. The next step is tracing and converting
+the remaining context around $7027–$7315, including car-indexed status,
+shared speed variables, collision conditions and dynamic upgrade factors.
+
+## Godot engine and mobile camera
+
+The development branch now contains a Godot 4.4 `project.godot` and
+testable GDScript input/steering/pedal/drive-byte components. GitHub Actions
+runs `tests/godot/test_mechanics.gd` on a real headless Godot installation.
+There is also a presentation-only camera
+`scripts/camera/ArcadePortraitCamera.gd` to provide smooth speed-aware
+panning without changing track geometry, orientation or pace.
+
+These are **building blocks**, not a playable race. The test suite deliberately
+prohibits invented or approximated car physics.
+
 ## Scope still open
 
 1. **Original runtime traces** under debugger-enabled MAME for input→RAM state
