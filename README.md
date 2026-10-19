@@ -29,7 +29,9 @@ See [docs/ARCADE_FIDELITY_SPEC.md](docs/ARCADE_FIDELITY_SPEC.md) for the baselin
 
 ## Current status
 
-Repository initialisation. No arcade mechanics have been extracted or verified yet; there is no claim that the initial project is a finished or authentic playable port.
+**Arcade ROM and original subroutine recovery underway.** The actual 1991 arcade ROM was provided and checksum-verified locally; its master/slave Z80 and X-ROM memory regions were reconstructed privately. Recoverable original input mechanisms now exist in Godot 4.4: steering dial+response curve, steering accumulators, pedal fixed-point response, and two X-ROM drive-byte stages. These were validated against original Z80 instructions or the X-ROM tables and have ROM-free regression tests. A noninvasive portrait camera is present, with Godot engine-level headless tests.
+
+**Not playable yet.** The downstream car-motion/traction, collisions, AI, pit/fuel/upgrade systems and per-race circuit geometry remain to be recovered and implemented. Debugger-enabled MAME traces and QRAM track snapshots have not been collected. Do not claim arcade gameplay parity on the basis of isolated verified arithmetic stages. See [mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), [actual ROM inspection](docs/ROM_INSPECTION_2026-10-19.md) and [recovery workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
 
 ## Legal / assets
 
