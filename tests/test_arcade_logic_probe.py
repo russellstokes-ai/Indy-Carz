@@ -51,7 +51,7 @@ class ArcadeInputRecoveryTests(unittest.TestCase):
         source = (ROOT / "scripts/mechanics/ArcadeWheelInput.gd").read_text()
         values = source.split("const STEERING_RESPONSE :=", 1)[1]
         values = values.split("[", 1)[1].split("]", 1)[0]
-        response = [int(n) for n in re.findall(r"\\d+", values)]
+        response = [int(n) for n in re.findall(r"\d+", values)]
         self.assertEqual(len(response), 32)
         self.assertEqual(hashlib.sha256(bytes(response)).hexdigest(),
                          "ae7455b49967eaec332b4495bc01a7f6eeab9e360ed8ddcdf6229d3c397866b3")
