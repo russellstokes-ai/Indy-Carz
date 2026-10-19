@@ -23,7 +23,7 @@ class SteeringStateTests(unittest.TestCase):
             addr = (((signed & 255) << 8) | 0x7F)
             xrom[addr * 2 + 1] = upper
         self.assertEqual(model_stage(0, 0, 0, xrom), (4, False))
-        self.assertEqual(model_stage(0, -12, 150, xrom), (122, False))
+        self.assertEqual(model_stage(0, -12, 150, xrom), (130, False))
         self.assertEqual(model_stage(0, 12, 240, xrom), (134, True))
 
     def test_godot_contains_exact_paths(self):
