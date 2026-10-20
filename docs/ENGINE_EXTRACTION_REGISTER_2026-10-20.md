@@ -73,7 +73,7 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 - `tools/arcade_logic_probe.py`, `tools/arcade_steering_opcode_parity.py`, `tools/arcade_pedal_opcode_parity.py`, `tools/arcade_drive_opcode_parity.py`, `tools/arcade_displacement_opcode_parity.py`: recorded original arithmetic stages
 - `tools/arcade_xrom_math.py`: exhaustive two-table math verification
 - `tools/arcade_audio_inventory.py`: sound 80186 and DAC ROM reconstruction
-- `tools/arcade_track_recovery.py`, `tools/mame_capture_trackmaps.lua`: original tilemap recovery preparations (MAME capture not yet run)
+- `tools/arcade_track_recovery.py`, `tools/mame_capture_trackmaps.lua`: original tilemap recovery preparations (MAME capture not yet run)\n- `tools/mame_capture_carstate.lua`: bounded 12,000-frame original master RAM capture of E000-E9FF, including six initialized racer-related state records (**unexecuted; requires local MAME**)\n- `tools/arcade_ram_delta_analysis.py`: computes per-field RAM change frequencies from captured frames, with no original state bytes in its JSON output; synthetic tests available
 
 All original binary data, extracted graphics and candidate disassembly remain **private**, never committed to this public repository. Original game art/code and audio are not authorised for inclusion in the Android package merely by changing its name.
 
