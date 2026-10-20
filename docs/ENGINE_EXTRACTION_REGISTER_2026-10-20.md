@@ -183,3 +183,50 @@ converter at `A600` **twice** and compares the resulting byte angles.
 actual impulse, damage and steering changes in the two downstream
 branches; hardware-emulated full-session contact parity. The full
 commercial Godot game has **not** started; original-engine Gate A is OPEN.
+
+
+## Exact original paired collision geometry response (20 October 2026, further)
+
+Original master Z80 fixed-ROM response routines now independently reproduced and
+opcode-checked, beyond previous broad-phase, contact table and direction tests:
+
+- **B985–BA1F and BA20–BABA**: IX and IY car-specific 10-word
+  geometry translation: add correction BC to offsets 00..08 and DE to 0A..12,
+  in steps of two bytes; set car status +7C bit6. Original upper-byte
+  guard redirects to routine 1689 when either signed 16-bit correction
+  high byte lies in 05..FA. **20,000 original instruction cases, zero
+  mismatches**, including both normal and redirected branches.
+- **B546–B5AB**: first/second car contact correction, signed arithmetic
+  half-shifts, original carry from the preceding B541 CP C0, a borrow
+  transferred between coordinate calculations, and **carry carried from
+  first-car B985 return into second-car first subtraction**. The original
+  status +7C bit1 can suppress correction to an individual participant.
+  Original counter E926 increments. **16,000 original-machine-code scenarios,
+  zero mismatches**, conditional on this specifically identified entry path.
+- **B5AC–B5C8**: byte E91B bit7 selects original IX/IY responder order;
+  clear bit = pass pointers as-is; set bit = pass pointers swapped and
+  mask payload with 7F, then restore pointers. **768 original opcode
+  dispatch comparisons, zero mismatches**.
+- **BABB–BB6B**: restores ten saved previous-coordinate words to the ten
+  current-coordinate words; copies angular-state word +1C to +3C;
+  conditionally reduces word +40 by its signed arithmetic one-eighth;
+  sets status +7C bits0,1,6. **18,000 original opcode comparisons,
+  zero mismatches**.
+- Routine 1689 visibly saves diagnostics and selects original master bank 0
+  before transferring to 68E0, which contains register-reporting text.
+  Treat this as an exceptional diagnostic control transfer, not
+  ordinary collision physics, until emulator observations establish
+  its full outcome.
+
+**Evidence:** [paired collision response and fallback](ARCADE_COLLISION_RESPONSE_2026-10-20.md);
+public ROM-gated verifiers in
+`tools/arcade_collision_geometry_push.py`,
+`tools/arcade_collision_b546_response.py`,
+`tools/arcade_collision_payload_dispatch.py`,
+`tools/arcade_collision_state_restore.py` with independent ROM-free tests.
+Original ROM and derived reports remain private.
+
+**Still OPEN:** complete B5C9–B67D impulse and B67E classification,
+full damage/collision event causality, actual track walls, AI, fuel/turbo,
+pit, upgrade and original end-to-end executed gameplay traces. No Godot
+gameplay development approved.
