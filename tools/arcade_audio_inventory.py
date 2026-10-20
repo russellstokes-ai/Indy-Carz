@@ -20,7 +20,7 @@ CHIPS = {
     "e-302-33023-01.u5": ("8f6b3cba2bc729f2e0623578b13720ead91333e4", 0x20000),
     "e-302-33025-01.u8": ("0ea814db7f647f39d11dcde793a17831fca3bddd", 0x20000),
     "e-302-33026-01.u9": ("2ff0f45f17b8a182afdaa5603e7a1af70e6336b7", 0x20000),
-    "eeprom-indyheat.bin": ("bd1f116c2650576da73a7f80e9677a9f3fefb390", 0x100),
+    "eeprom-indyheat.bin": ("bd1f116c2650576da73f0ca647a7f872c890dfe5", 0x100),
 }
 # Note: EEPROM SHA1 cross-check against original MAME manifest is intentional.
 AUDIO_INTERLEAVES = {
