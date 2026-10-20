@@ -71,19 +71,19 @@ ROM-free regressions:
 
 ## Outstanding engine-wide gate
 
-Trace and verify B728–B777 side effects and the original 0971 call; continue through B778–B86B and negative B86C; obtain controlled MAME in-game frame/CPU/RAM traces; recover road and pit masks, actual dynamics, full AI, fuel, turbo, repairs, upgrades and the championship systems.
+Complete original 0971 effects after its verified early exits, and follow the original B728–B777 collision branch into B778–B86B and negative B86C; obtain controlled MAME in-game frame/CPU/RAM traces; recover road and pit masks, actual dynamics, full AI, fuel, turbo, repairs, upgrades and the championship systems.
 
 **Preserve the canonical Godot baseline.** The present ArcadeCarRecord uses some original IX-relative offsets; physical slot mapping requires a complete audit before refactoring this code. Do not introduce speculative physics, reshape or rotate the circuits, or release original ROM/assets in public.
 
 **Original engine Gate A remains OPEN.** No new playable Godot code, concept build or APK was produced.
 
 
-## 3. Original two-car collision response branch: B728–B777 (bounded original 0971 fast-return domain)
+## 3. Original two-car collision response branch: B728–B777 (bounded original 0971 early-return domains)
 
 Recovered the original **80-byte** fixed-master stage B728–B777, opcode SHA-256:
 2f1cafa7bdd97f1c002be910f91fe13276b5b7336bbb641595591b0c45f2b7ff.
 
-This section models only input cases in which every invoked original helper **0971** takes its real five-byte gate BIT 0,(IX+0x31); RET NZ, thereby performing **no further actions**. If the gate is clear, the independent and machine models deliberately reject the case as **FullHandlerUnverified** because the much longer 0971 routine is not yet understood. This limitation is essential.
+This bounded verification now covers all THREE original early-return branches of helper 0971 (at 0975, 097F and 0984). When original 0971 passes all three and reaches the longer continuation at 0985, both machine and independent models deliberately raise **FullHandlerUnverified** instead of guessing effects. Some early-return branches write car slot+0xCE before returning; this additional original state modification is now modelled.
 
 For each car with its original status **BIT 1 at physical slot+0xDC set**:
 - Write **0x30** at its physical slot+0xDC.
@@ -96,12 +96,39 @@ For each car with its original status **BIT 1 at physical slot+0xDC set**:
 
 ### Privately executed Z80 parity
 
-- **100,000** independently generated two-car states versus bounded original B728–B777 opcode execution, using the already opcode-verified 0A30 helper and the actual original 0971 five-byte early-return gate.
+- **100,000** independently generated two-car states versus bounded original B728–B777 opcode execution, composing independently verified original 0A30 and three original 0971 early-return paths.
 - **Zero** full two-car record or resulting-A mismatches.
 - Exactly **25,000** scenarios for each of the original four cases: no car events, first-car event only, second-car event only, both events.
-- **Eight** ROM-free local regression tests, including a dedicated assertion for the counterintuitive original first-car pointer behaviour.
+- **Ten** ROM-free local regression tests, including the first-car IX pointer behaviour and the additional two original 0971 early-return cases.
 
 Source: tools/arcade_collision_contact_two_car_fastpath.py.
 Tests: tests/test_arcade_collision_contact_two_car_fastpath.py.
 
-**Next real extraction gate:** Recover the longer original 0971 path after the initial gate, then the B778 and B86C continuations and correlate these status and input fields with real arcade execution traces. The original 24-contact-category lookup remains private. Godot gameplay, track geometry and mobile camera remain untouched; overall engine Gate A stays OPEN.
+**Next real extraction gate:** Recover the longer original 0971 path from 0985, then the B778 and B86C continuations and correlate these status and input fields with real arcade execution traces. The original 24-contact-category lookup remains private. Godot gameplay, track geometry and mobile camera remain untouched; overall engine Gate A stays OPEN.
+
+
+## 4. Original 0971 entry and three early-return gates: fixed master 0971–0984
+
+The original 20-byte fixed master Z80 stage 0971–0984 has SHA-256:
+9cf5938e82faad23619e335977fcc5c4c553dc6b3a280399d0abe3e3ed4c9233.
+
+Here IX points 0x80 bytes into the physical 256-byte state slot:
+
+- If original **IX+0x31 bit0 is SET** (physical slot+0xB1), the routine immediately **RET NZ at 0975**, without changing the car record. Original A is unchanged.
+- If that bit is CLEAR, it writes original A to **IX+0x4E** (physical slot+0xCE), stores A in B, then reads **IX-0x03** (physical slot+0x7D).
+- If that byte is **unsigned 3 or greater**, it returns at **097F** with A holding the original slot+0x7D byte and B holding the call's entry accumulator.
+- Otherwise it reads **IX+0x23** (physical slot+0xA3). When nonzero, the routine returns at **0984**, with that byte in A and the original A in B.
+- Only if all three early exits fail does original execution reach **0985**, which has a much longer and still unverified memory-transfer/game-state path. Reject, do not invent the rest.
+
+### Exhaustive private original-code parity
+
+- **131,072** input cases: two original bit0 statuses × all 256 values of the first comparator × all 256 values of the second.
+- **131,069** cases returned from original 0971–0984 through one of the three proven exits; exactly **three** input combinations reached 0985. All **131,072** returned or escalated exactly as in original opcode execution, zero mismatches.
+- Per-exit original combinations: **65,536** at 0975; **64,768** at 097F; **765** at 0984; **3** intentionally unresolved at 0985.
+- **Seven** ROM-free unit tests check write priorities, branch boundaries, original A/B semantics and safe rejection of the deeper path.
+
+**Important:** Input-domain case frequencies are NOT proof of real-game runtime frequency. The unrecovered 0985 continuation may be frequently or deliberately entered during actual races.
+
+Public verifier: tools/arcade_collision_service_0971_entry.py; ROM-free tests: tests/test_arcade_collision_service_0971_entry.py.
+
+The B728 original paired-event verifier was extended and **rerun on 100,000 private original-code cases with zero mismatches**, exercising all three verified 0971 returns. The original first-car IX helper-call ordering remains unchanged. No speculation, gameplay or original graphical assets were added.
