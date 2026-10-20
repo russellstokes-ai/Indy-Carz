@@ -15,7 +15,7 @@ The exact original order is: 13, 12, 1, 3, 7, 8, 4, 2, 5, 11, 0, 6, 9, 10, 1. **
 
 Original E69A values **0-14** (sign bit clear) select a particular event directly, regardless of prior E69B. Values 15-127 are outside the verified 15-entry table domain and fail closed in the independent model. E69A values **128-255** (sign bit set) choose automatic mode: at first championship entry round E69B becomes 0; at advancement it increments and wraps from 14 to 0. Automated advance rejects any previous E69B outside 0-14.
 
-When first-round initialization selects round 0, the original PC proceeds to **2953**, the six-linked-slot clear. For other selected rounds it skips directly to RET at **2989**. On advancement, the checked stage ends at **62C5**, just before **CALL 2120**, which is still unverified and must not be assumed to leave race state untouched.
+When first-round initialization selects round 0, the original PC proceeds to **2953**, the six-linked-slot clear. For other selected rounds it skips directly to RET at **2989**. On advancement, the checked stage ends at **62C5**, just before **CALL 2120**. Its original port04/05/06/0C handshake and 2105 interrupt-state helper have now been recovered and separately opcode-verified (see docs/ARCADE_IO_HANDSHAKE_2120_2026-10-20.md). The actual hardware peer, live-game device responses and sound-event meaning remain unresolved.
 
 **Original-machine parity: 11,520 input combinations (5,760 for initialization and 5,760 for advancement), zero mismatches** against independent byte/state logic, including the original 1747 ROM lookup. Original master and table SHA256 values are pinned in tools/arcade_championship_progression.py; ROM-free tests in tests/test_arcade_championship_progression.py.
 
@@ -56,7 +56,7 @@ Public CI runs independent ROM-free synthetic tests. Authentic original-opcode e
 
 ## Remaining original engine / release blockers
 
-Original CALL 2120, race entry/results/score flow, exact lap and checkpoint scoring, AI, terrain/wall collisions, damage, steering/traction integration, fuel/turbo/repair/upgrade/pit state machines, original 80186 audio commands, frame timing, all fourteen dynamic QRAM tracks and related collision/pit masks remain to be recovered/verified. The full commercial Godot engine, replacement visual/audio assets and Android QA are not finished.
+Hardware semantics and live timing for original CALL 2120, race entry/results/score flow, exact lap and checkpoint scoring, AI, terrain/wall collisions, damage, steering/traction integration, fuel/turbo/repair/upgrade/pit state machines, original 80186 audio commands, frame timing, all fourteen dynamic QRAM tracks and related collision/pit masks remain to be recovered/verified. The full commercial Godot engine, replacement visual/audio assets and Android QA are not finished.
 
 **Approved design baseline unchanged:** original circuit geometry, original arcade mechanics and pace; portrait camera uses slow smooth bounded panning, never rotated or redesigned tracks. Original ROM or proprietary art/audio/disassembly must stay PRIVATE.
 
