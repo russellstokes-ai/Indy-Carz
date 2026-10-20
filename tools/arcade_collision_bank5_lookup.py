@@ -40,6 +40,19 @@ def source_assertions(master: bytes, xrom: bytes) -> bytes:
         raise ValueError("Original bank5 select at AD64 changed")
     if master[0xB3A6:0xB3B1] != bytes.fromhex("3a 08 e6 e6 f0 32 08 e6 d3 f4 c9"):
         raise ValueError("Original bank0 restore at B3A6 changed")
+    # A negative first-byte result enters the original accepted-contact path.
+    # Those instructions save the current/previous table addresses, contact
+    # marker, and bump the contact count. Only the first two accepted events
+    # reach B506 to read the next two record bytes.
+    if master[0xB4D4:0xB4EE] != bytes.fromhex(
+        "ed 5b 28 e9 ed 53 2a e9 22 28 e9 32 19 e9 "
+        "3a 27 e9 3c 32 27 e9 fe 03 da 06 b5"
+    ):
+        raise ValueError("Original accepted-contact bookkeeping changed")
+    if master[0xB506:0xB510] != bytes.fromhex(
+        "23 7e 32 1a e9 23 7e 32 1b e9"
+    ):
+        raise ValueError("Original contact response record-byte loads changed")
     table = master[BANK5_OFFSET:BANK5_OFFSET + TABLE_BYTES]
     if hashlib.sha256(table).hexdigest() != TABLE_SHA:
         raise ValueError("Original bank5 contact lookup table digest differs")
