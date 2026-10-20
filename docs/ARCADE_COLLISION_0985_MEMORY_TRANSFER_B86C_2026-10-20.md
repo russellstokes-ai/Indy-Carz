@@ -76,3 +76,31 @@ Public verifier: `tools/arcade_collision_b86c_dispatch.py`; tests:
 - Recover end-to-end original driving input, acceleration, grip, AI, turbo, fuel, repairs, upgrade economy, results and championship flow.
 
 **Engine extraction Gate A remains OPEN.** The protected Godot camera, canonical circuit constraints and existing verified gameplay helpers were not modified. No preview/demo/APK or substitute physics was created.
+
+## 3. Original B884–B8AB car working-state transfer and external callback gate
+
+**New bounded original Z80 recovery:** fixed-master **B884–B8AB**, 40 actual instruction bytes, SHA-256 `f58c8693bb5d44cf4507d94b6cb73c8f116736da8f7d6a090ab8710704438dce`.
+
+For an original car-state IX pointer 0x80 bytes into its 0x100-byte slot, the verified entry performs:
+
+1. PUSH IX; POP HL; ADD HL,0xFF80. This selects the **start of that car's physical 256-byte record**.
+2. Set DE=E72B and BC=0x0014, then original **LDIR transfers exactly twenty bytes** from the record's offsets 0–19 into the master shared working-state buffer E72B–E73E. The remaining original 96-byte scratch-state region is not modified by this first copy.
+3. Write **E941 = 0xFF** and invoke the original **BC8C** callback. **BC8C is deliberately left opaque:** we do not execute, reproduce or claim its original effects.
+4. After that callback returns, original code takes the high nibble of **E608**, ORs it with **0x05**, writes E608 and outputs the same byte on **port F4**.
+5. Increment the byte read from **E941**. If its post-callback value was 0xFF, the increment reaches zero and the original **RET Z at B8AB** returns; otherwise the original code proceeds to **B8AC**, whose full path remains unverified.
+
+The independent copy+gate model and bounded real-original-opcode interpreter agree on **30,000 cases, zero mismatches**, with 15,000 cases for each hypothetical callback-outcome branch. Both verified exit categories deliberately use *controlled post-callback E941/E608 inputs*; the case mix is NOT a measured gameplay frequency or a claim that BC8C behaves according to a guessed model. The remaining BC8C side effects cannot be proven by simulating its return alone.
+
+**Seven ROM-free regression tests pass.** Public verifier:
+`tools/arcade_collision_b884_callback_gate.py`;
+tests: `tests/test_arcade_collision_b884_callback_gate.py`.
+
+Original-ROM gated rerun:
+
+    python tools/arcade_collision_b884_callback_gate.py local/rom-recovery/master.mame_runtime.bin --cases 30000
+
+### Next: the actual BC8C callback and B8AC–B8E3
+
+The exact B884 entry and return gate are now characterised, but **the content of BC8C and what the subsequent 0x42-byte state restoration does remain OPEN**. We must map bank-5 internal calls, E941 producer/consumer, actual memory spaces and any nonlocal diagnostic/scheduler transfers before assigning impact, damage, knockback or other gameplay effects.
+
+There is no change to the approved original track geometry, original engine-first development gate or Godot camera baseline.
