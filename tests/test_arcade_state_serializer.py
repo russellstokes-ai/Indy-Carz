@@ -72,8 +72,8 @@ class StateSerializerTests(unittest.TestCase):
         self.assertEqual(records[0]["snapshot_end_stack_pointer"], "E060")
         self.assertTrue(all(c["snapshot_bytes"] == 96 for c in records))
         mem = fake_master()
-        self.assertEqual(len(candidate_calls(mem, 0x61CE)), 6)
-        self.assertEqual(len(candidate_calls(mem, 0x629A)), 6)
+        self.assertEqual(len(candidate_calls(mem, 0x61CE)), 18)
+        self.assertEqual(len(candidate_calls(mem, 0x629A)), 18)
 
     def test_two_6_car_indirect_callback_passes(self):
         mem = fake_master()
