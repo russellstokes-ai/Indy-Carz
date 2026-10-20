@@ -18,6 +18,7 @@
 | Pedal | Original channel selection I/O 0x0B, input 0x09, X-ROM slot-1 lookup, IX+0x57 output; bounded opcode parity tests | PARTIALLY VERIFIED |
 | Original state-record initialisation | Original master bank-0 code 0x83FF..0x8447 initialises SIX 0x100-byte records at E580, E480, E380, E280, E180, E080 with descending slot ordinals 5..0 and bit masks 20,10,08,04,02,01. Five racing cars plus auxiliary state; purpose of sixth is still open | VERIFIED STRUCTURE |
 | Original working-state layout | Each of six 0x100-byte records at E000..E5FF contains an independent 0x60-byte (48-word) working state at offset 0; routines 61CE..6299 / 629A..6365 load/save this via shared scratch E72B..E789 using stack pointer transfers | EXACT SERIALIZER VERIFIED |
+| Original second-callback event fanout | Master 2F1E dispatches a course-specific spatial result from 7AB4 into three distinct branch paths, then at 3006..3044 invokes nine conditional handlers using indexed car state bits; seven immediately clear their trigger bit. Additional masked event branch at 3045 and tail 689D | INSTRUCTION FLOW VERIFIED; HANDLER PURPOSES UNVERIFIED |
 | Original six-slot callback passes | 5EA1..5F12 calls 601E once per slot during initialization; 2D87..2E0B and 2E0E..2E92 each dispatch six per-slot function pointers at +0x94 and +0x96 through 18C0 (JP HL), with state copy before/after. 12 callbacks statically verified | EXACT DISPATCH STRUCTURE VERIFIED; TARGETS/TIMING OPEN |
 | Human/AI input selection | First three racer slots can be human/AI, two default AI; dispatch at master 0x6793 and AI entry 0x2263 | DISPATCH VERIFIED |\n| Original AI accelerator input | Master bank-0 0x22A2–0x22B1 stores car IX+0x57 = ((IX+0x77) >> 1) & 0x7E; B = (((IX+0x77)>>1) - (IX-0x45)) & 0xFF. 65,536 bounded original-opcode input cases checked, zero mismatches. Rest of AI pending | NUMERIC STAGE VERIFIED |
 | Two drive arithmetic stages | Z80 bank-0 PCs 0x7039 and 0x709C, original X-ROM multiplication and saturation | NUMERIC STAGES VERIFIED |
@@ -104,3 +105,17 @@ All original binary data, extracted graphics and candidate disassembly remain **
 - Technical record: [callback and original circuit-data milestone](ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md).
 - Tools: `tools/arcade_callback_recovery.py`, `tools/arcade_start_grid_extraction.py`, `tools/arcade_course_bounds.py`. Synthetic tests require no ROM data.
 - **Still blocked:** original full racing engine and live MAME traces; Gate A has NOT passed; no Godot gameplay or commercial game build was started.
+
+## Latest dependency: postevent event-handler fanout
+
+The second-phase callback's nine indexed BIT/CALL-NZ handlers have now been
+recovered instruction-by-instruction, including the seven immediate self-clearing
+flag handlers and two handlers with different entry logic. The global E67D gate
+controls whether original course spatial event routine 7AB4 is reached.
+See [original handler dispatch record](ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md)
+and `tools/arcade_second_phase_dispatch.py`.
+
+**Next:** trace callback targets through their state changes and hardware
+interactions, identify game semantics, then use controlled MAME RAM/CPU
+traces to verify which branches execute during actual racing. The MAME
+runtime blocker is still open; this static inventory is NOT gameplay parity.
