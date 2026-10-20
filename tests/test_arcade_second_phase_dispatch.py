@@ -23,6 +23,12 @@ def dummy_original_shape():
             0xDD, 0xCB, offset, 0x46 + 8*bit,
             0xC4, target & 255, target >> 8,
         ])
+    for i,(offset,bit,target) in enumerate(KNOWN):
+        # Original seven flag-clearing handlers; two are non-clearing at entry.
+        if i not in (5, 7):
+            region[target:target+4] = bytes([
+                0xDD, 0xCB, offset, 0x86 + 8*bit
+            ])
     region[0x3045:0x304D] = bytes.fromhex("dd 7e 34 e6 30 c4 3b 11")
     region[0x304D:0x3050] = bytes.fromhex("cd 9d 68")
     for address, signature in second.SPATIAL_BRANCH_SIGNATURES.items():
@@ -36,6 +42,9 @@ class SecondPhaseDispatchTests(unittest.TestCase):
         region = dummy_original_shape()
         handlers = second.parse_postevent_handlers(region)
         self.assertEqual(len(handlers), 9)
+        self.assertEqual(sum(bool(x["clears_trigger_flag_on_entry"]) for x in handlers), 7)
+        self.assertFalse(handlers[5]["clears_trigger_flag_on_entry"])
+        self.assertFalse(handlers[7]["clears_trigger_flag_on_entry"])
         self.assertEqual(
             [(int(v["state_ix_offset"],16), v["state_bit"],int(v["target_pc"],16))
              for v in handlers], KNOWN)
@@ -48,6 +57,7 @@ class SecondPhaseDispatchTests(unittest.TestCase):
             r = second.extract(region)
         self.assertEqual(r["per_car_second_callback"], "2F1E")
         self.assertEqual(len(r["conditional_state_handlers"]), 9)
+        self.assertEqual(r["immediately_clearing_handlers"], 7)
         self.assertIn("OPEN", r["spatial_branch"]["meaning"])
 
     def test_mutated_opcode_rejected(self):
