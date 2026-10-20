@@ -140,3 +140,44 @@ track redesign is authorised.**
 - Godot adapter is written but a Godot runtime has **not** been executed here.
 - Numeric extraction has been exercised locally on verified original arcade
   ROM data; it does **not** demonstrate a completed game.
+
+
+## Further original arithmetic recovered — 20 October 2026
+
+**Master Z80 bank 0, PC 0x71D9–0x71F9 inclusive.**
+A separate, bounded original-instruction execution check recovered this exact
+signed, 16-bit *intermediate* calculation:
+
+1. The master Z80 reads a byte from car record offset **IX-0x0B** and multiplies
+   it by register **B** through X-ROM slot 1 (8-bit rounded fixed-point table).
+2. It doubles the 8-bit lookup output with wraparound and shifts the result
+   left by four bits.
+3. The high/sign bit of RAM location **E76C** controls conditional 16-bit
+   two's-complement negation. The result is left in **DE** when control
+   passes to PC **0x71FA**.
+
+Independently reconstructed expression (unsigned 16-bit result):
+
+`base = (((B * car[IX-0x0B] + 128) >> 8) * 2 & 255) << 4`
+
+`DE = (-base if (RAM[E76C] & 0x80) else base) & 0xFFFF`
+
+**131,072 cases were tested against bounded execution of the original ROM
+instructions** (all 256 values of B × all 256 values of IX-0x0B × both
+sign-branch outcomes), with **zero mismatches**. See
+`tools/arcade_displacement_opcode_parity.py`; invoke it using
+`python tools/arcade_displacement_opcode_parity.py local/rom-recovery/master.mame_runtime.bin local/rom-recovery/xrom.mame_runtime.bin`.
+ROM-free synthetic tests are in
+`tests/test_arcade_displacement_opcode_parity.py`.
+
+**Do not label this a recovered velocity, traction or collision formula yet.**
+It is one numerical stage within the larger racing update path. The semantic
+roles of RAM[E76C], IX-0x0B and the downstream DE usage must be demonstrated
+through full instruction/state tracing. No new Godot gameplay implementation
+was made for this step, per the engine-extraction-first release gate.
+
+**Next target:** Determine how this DE intermediate combines with the
+remaining car state in the following PC 0x71FA–0x7315 branches, then
+recover the complete per-frame racer update and cross-bank collision
+processing. Debugger-enabled MAME reference traces remain an open prerequisite
+for final arcade parity.
