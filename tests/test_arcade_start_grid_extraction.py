@@ -29,6 +29,14 @@ def fake_master() -> bytes:
             master[address:address+5] = ((course*100+car).to_bytes(2, "little") +
                                          (car*100+course).to_bytes(2, "little") +
                                          bytes([course]))
+    # Artificial championship: every internal course once, course 2 repeated.
+    master[0x1ABF:0x1ABF+15] = bytes(list(range(14)) + [2])
+    master[0x2941:0x294D] = bytes.fromhex(
+        "3a 9b e6 21 bf 1a cd 47 17 32 99 e6")
+    bank3_offset = 0x28000 + 0x62B4 - 0x2000
+    wrap = bytes.fromhex(
+        "fe 0f 20 01 af 32 9b e6 21 bf 1a cd 47 17 32 99 e6")
+    master[bank3_offset:bank3_offset+len(wrap)] = wrap
     return bytes(master)
 
 
@@ -40,6 +48,9 @@ class OriginalGridTests(unittest.TestCase):
         self.assertEqual(report["course_count"], 14)
         self.assertEqual(report["grid_slots_per_course"], 5)
         self.assertEqual(report["total_records"], 70)
+        self.assertEqual(report["original_championship"]["rounds"], 15)
+        self.assertEqual(report["original_championship"]["course_internal_index_per_round"], list(range(14)) + [2])
+        self.assertEqual(report["original_championship"]["repeated_course_internal_index"], 2)
         self.assertEqual(report["original_course_grids"][0]["source_cpu_pointer"], "639E")
         self.assertEqual(report["original_course_grids"][-1]["source_cpu_pointer"], "64E3")
         self.assertEqual(report["original_course_grids"][12]["starting_grid"][4],
