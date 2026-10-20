@@ -181,3 +181,86 @@ remaining car state in the following PC 0x71FA–0x7315 branches, then
 recover the complete per-frame racer update and cross-bank collision
 processing. Debugger-enabled MAME reference traces remain an open prerequisite
 for final arcade parity.
+
+
+## Original trigonometric coordinate integration — 20 October 2026 (verified)
+
+### Original 256-entry angle tables
+
+The original arcade master ROM contains an 8-bit cosine table at **CPU 0xA200–0xA2FF**
+and an 8-bit sine table at **CPU 0xA500–0xA5FF** (when ROM mapping is enabled).
+Every original value matches the independently generated formula over all 256 angles:
+
+```
+angle_radians = angle_byte * 2 * pi / 256
+cos_byte = clamp(round(128 * cos(angle_radians)), -128, 127)
+sin_byte = clamp(round(128 * sin(angle_radians)), -128, 127)
+```
+
+The stored results are signed two's-complement bytes. These tables are derived
+from the original ROM and should not be copied as original assets to the release.
+
+### Original two-axis position update (master bank 0, PC 0x7530–0x7571)
+
+This routine reads the **high byte** of 16-bit state at `E769` from
+`E76A`, and the high byte of 16-bit motion state at `E76B` from
+`E76C`. It uses the sine/cosine values and the original X-ROM slot-0
+signed saturated multiplication:
+
+```
+signed_product = clamp(signed8(trig) * signed8(motion) * 2, -32768, 32767)
+step = floor((signed_product * 4 + 128) / 256)
+RAM16[E735] = (RAM16[E735] + step(sin[RAM8[E76A]], RAM8[E76C])) & 65535
+RAM16[E72B] = (RAM16[E72B] + step(cos[RAM8[E76A]], RAM8[E76C])) & 65535
+```
+
+These are *position-like 16-bit accumulators*: the startup code loads initial
+values into them from an indexed course/car state table (master 0x60AA/0x60B3),
+and later reads them for movement and geometry. Final dynamic proof of
+coordinate scale, reference frame and fixed update cadence is still required.
+
+The independent formula matched **65,536 bounded original-Z80 opcode
+executions**, 256 heading samples × 256 motion samples, zero mismatches.
+The verifier is `tools/arcade_coordinate_opcode_parity.py`; it uses only
+private master/X-ROM data and commits no proprietary ROM bytes.
+
+### Original 8-value oriented rectangle geometry (master bank 0, PC 0x7572–0x75F1)
+
+The next consecutive routine reads the high byte at **E768** (of 16-bit
+angular state E767), which is **distinct** from the angle used above at E76A.
+Using its own sine/cosine, it generates eight 16-bit coordinate values from
+centre candidates `x=RAM16[E735]` and `y=RAM16[E72B]`:
+
+```
+s = sin8[RAM8[E768]]
+c = cos8[RAM8[E768]]
+RAM16[E73D] = x + 3*s - 2*c
+RAM16[E737] = x - 3*s + 2*c
+RAM16[E73B] = x + 3*s + 2*c
+RAM16[E739] = x - 3*s - 2*c
+RAM16[E733] = y + 3*c + 2*s
+RAM16[E72D] = y - 3*c - 2*s
+RAM16[E731] = y + 3*c - 2*s
+RAM16[E72F] = y - 3*c + 2*s
+```
+
+All operations wrap to 16-bit. The resulting four symmetrical pairs have the
+mathematical form of a rotated **3-by-2 half-extent rectangle** (in internal
+units). The actual use of the geometry in track/car collision testing is NOT
+yet recovered, so this must not be labelled the final collision algorithm.
+
+**Original opcode parity:** 65,536 heading/centre test cases, verifying eight
+16-bit output coordinates per case = **524,288 coordinate comparisons**, zero
+mismatches. Tool: `tools/arcade_geometry_opcode_parity.py`. The expected
+formula is independent of the bounded Z80 instruction executor, and only
+private local ROM data is read.
+
+The following routines at 0x75F2–0x7634 copy the computed geometry to a
+secondary buffer at E747..E75B. Other routines at 0x61CE–0x6235 and
+0x62FC–0x635C save and restore this block. Their execution sequence and
+collision/terrain consumers need full dynamic verification.
+
+**Important:** These are genuinely recovered portions of the original
+low-level engine. They do not establish the complete vehicle acceleration,
+tyre/slip, collision response, race rules or AI logic. Game construction remains
+blocked by the approved full-engine extraction gate.
