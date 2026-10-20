@@ -20,6 +20,9 @@
 | Human/AI input selection | First three racer slots can be human/AI, two default AI; dispatch at master 0x6793 and AI entry 0x2263 | DISPATCH VERIFIED |\n| Original AI accelerator input | Master bank-0 0x22A2–0x22B1 stores car IX+0x57 = ((IX+0x77) >> 1) & 0x7E; B = (((IX+0x77)>>1) - (IX-0x45)) & 0xFF. 65,536 bounded original-opcode input cases checked, zero mismatches. Rest of AI pending | NUMERIC STAGE VERIFIED |
 | Two drive arithmetic stages | Z80 bank-0 PCs 0x7039 and 0x709C, original X-ROM multiplication and saturation | NUMERIC STAGES VERIFIED |
 | Intermediate movement stage | Z80 bank-0 PCs 0x71D9–0x71F9: multiply B × (IX−0x0B), scale, conditional signed negation from RAM E76C | NUMERIC STAGE VERIFIED |
+| 256-step angular trigonometric data | Master 0xA200–A2FF cosine and 0xA500–A5FF sine, 512/512 signed bytes exactly equal clamp(round(128 trig(2πa/256)), -128,127) | COMPLETE TABLE MATH VERIFIED |
+| Exact two-axis movement projection | Bank-0 PCs 0x7530–0x7571: signed saturating X-ROM multiply of trig(high(E769)) and high(E76B), step = floor((signed product×4+128)/256); accumulates into E735 and E72B. 65,536 bounded original-opcode cases passed | EXACT STAGE VERIFIED; FULL VEHICLE UPDATE OPEN |
+| Original eight-value vehicle geometry | Bank-0 PCs 0x7572–0x75F1: produces symmetric 16-bit geometry around E735/E72B with 3×sin/cos and 2×sin/cos offsets; 524,288 original instruction coordinate outputs checked without mismatch | EXACT GEOMETRY STAGE VERIFIED; COLLISION CONSUMERS OPEN |
 | X-ROM slot 0 | **Signed 8-bit × signed 8-bit × 2, saturated at +32767**, all 65,536 operand pairs checked with 0 mismatches | ENTIRE OUTPUT VERIFIED |
 | X-ROM slot 1 low byte | **(unsigned8(a) × unsigned8(b) + 128) >> 8**, all 65,536 pairs checked with 0 mismatches | ENTIRE OUTPUT VERIFIED |
 | X-ROM slot 1 high byte | Separate table of 65,536 bytes; mathematical meaning still unidentified | OPEN |
@@ -54,7 +57,7 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 
 ## Ordered Gate A extraction work (before Godot gameplay)
 
-1. **Runtime capture:** launch the authentic arcade set in debugger-enabled MAME, verify original code-banking, read all five car state records and global race RAM every fixed update. Capture control changes for each driver and original output.
+1. **Runtime capture:** launch the authentic arcade set in debugger-enabled MAME, verify original code-banking, read all five car state records and global race RAM every fixed update. Capture control changes for each driver and original output; pay special attention to E767/E769 angular values, E76B signed motion and E72B/E735 position-like accumulators.
 2. **Frame/update-loop:** map the master/slave CPU message handoff, per-frame call chain, original tick cadence, indexed car record fields and global RAM references.
 3. **Vehicle core:** decode speed, acceleration, off-throttle deceleration, lateral behaviour, heading transforms and position integration. Validate full input-to-coordinate traces.
 4. **Impact and terrain:** boundaries, walls, car collisions, damage, recovery, spin, fire and off-track slowdown.
@@ -69,6 +72,8 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 ## Runnable extraction tools on Draft PR #2
 
 - `tools/arcade_rom_recovery.py`: original Z80/X-ROM reconstruction\n- `tools/arcade_ai_opcode_parity.py`: verified bounded original AI pedal byte mapping (not complete AI)
+- `tools/arcade_coordinate_opcode_parity.py`: full 256-step trig mathematical reconstruction, 65,536 original Z80 two-axis position update cases
+- `tools/arcade_geometry_opcode_parity.py`: original 16-bit 8-point geometry mapping, 524,288 coordinate comparisons against bounded Z80 execution
 - `tools/arcade_banked_cfg.py`: conservative cross-bank Z80 structural graph (runtime mechanics unverified)
 - `tools/arcade_logic_probe.py`, `tools/arcade_steering_opcode_parity.py`, `tools/arcade_pedal_opcode_parity.py`, `tools/arcade_drive_opcode_parity.py`, `tools/arcade_displacement_opcode_parity.py`: recorded original arithmetic stages
 - `tools/arcade_xrom_math.py`: exhaustive two-table math verification
