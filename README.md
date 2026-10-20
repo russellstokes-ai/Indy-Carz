@@ -20,7 +20,7 @@ A Godot 4 mobile-first overhead arcade racer inspired by the **1991 Indy Heat ar
 
 **Never label approximated physics as arcade-faithful.** Any mechanic must have a recorded reference observation or be marked `UNVERIFIED`. Avoid replacing game rules with third-party template physics. A clean-room implementation is preferred to committing original ROM binaries or proprietary source/assets.
 
-See the [entire-game extraction register](docs/ENGINE_EXTRACTION_REGISTER_2026-10-20.md), the [recovered callback/track/championship evidence](docs/ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md), the [original mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), and the [decompilation workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
+See the [entire-game extraction register](docs/ENGINE_EXTRACTION_REGISTER_2026-10-20.md), the [recovered callback/track/championship evidence](docs/ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md), the [original collision prefilter and separation maths](docs/ARCADE_COLLISION_PREFILTER_2026-10-20.md), the [original mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), and the [decompilation workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
 
 ## Project structure
 
