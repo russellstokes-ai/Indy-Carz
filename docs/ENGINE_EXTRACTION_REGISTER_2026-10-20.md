@@ -230,3 +230,12 @@ Original ROM and derived reports remain private.
 full damage/collision event causality, actual track walls, AI, fuel/turbo,
 pit, upgrade and original end-to-end executed gameplay traces. No Godot
 gameplay development approved.
+
+
+## New exact original collision correction stages — 20 October 2026
+
+- **Fixed Z80 B5C9–B63B (115 bytes)** now recovered as the exact contact correction-vector synthesis. Original E91B low-7-bit input, first-car angular state, relative-heading nibble E922, signed 8-bit trig, original signed saturated X-ROM multiplier and arithmetic right shifts produce 16-bit BC/DE vectors. Exhaustive original-versus-independent test **128 × 256 × 16 = 524,288 cases, 1,048,576 words, zero mismatches**.
+- **Fixed Z80 B63C–B67D (66 bytes)** now recovered as original two-car correction assignment, conditioned on each record's +7C bit1. Both-bit1-set diverts to B4EE (unresolved); one eligible car receives doubled vectors; both eligible cars receive asymmetrically reversed corrections affected by carry from first car's last coordinate translation and borrow into the second axis. **40,000 bounded original-code cases, zero mismatches** when composed with previously verified original B985/BA20 translators.
+- This connects the previously recovered 6,912-entry bank-5 contact lookup and approach-angle classifier to the original geometry translation paths. It does **not** recover the remaining B67E onwards velocity/damage/heading branches or special scheduler transfer at 1689.
+- Sources: [contact vector and assignment evidence](ARCADE_COLLISION_VECTOR_APPLICATION_2026-10-20.md), public validators tools/arcade_collision_b5c9_vector.py and tools/arcade_collision_b63c_assignment.py, plus ROM-free tests.
+- **Next:** classify original B67E–B8E4 event and motion handling, and verify runtime contact changes in debugger-enabled MAME. Gate A remains OPEN; no new Godot gameplay.
