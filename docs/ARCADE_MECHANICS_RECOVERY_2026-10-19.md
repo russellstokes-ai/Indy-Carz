@@ -264,3 +264,48 @@ collision/terrain consumers need full dynamic verification.
 low-level engine. They do not establish the complete vehicle acceleration,
 tyre/slip, collision response, race rules or AI logic. Game construction remains
 blocked by the approved full-engine extraction gate.
+
+
+## Original six-slot state machine — 20 October 2026 (verified code structure)
+
+The original arcade keeps six separate **0x100-byte RAM slots**, based at
+`E000,E100,E200,E300,E400,E500`. Each slot has a **96-byte dynamic
+working-state block** in its lowest 0x60 bytes, followed by additional
+status/control fields. The IX bases `E080..E580` refer to these same slots.
+
+Two original Z80 routines use the stack pointer for efficient exact 48-word
+transfer, with interrupts temporarily disabled and the original SP restored:
+
+- **Master bank 0, PC 0x61CE–0x6299**: load 48 little-endian 16-bit words from
+  a slot's first 0x60 bytes and assign them sequentially to shared scratch
+  RAM `E72B..E789` (48 × 2 bytes).
+- **PC 0x629A–0x6365**: write those 48 words back into the same original slot,
+  using reversed `LD HL,(nn); PUSH HL` ordering and stack pointer initially
+  set to `slot+0x60`. The copy is position-preserving.
+- **PC 0x5EA1–0x5F12**: explicit six-slot initialisation pass:
+  load slot, set IX to `slot+0x80`, call `0x601E`, save slot.
+- **PC 0x2D87–0x2E0B**: six callback dispatches using each slot's 16-bit
+  pointer at **slot+0x94**, then saving the working state.
+- **PC 0x2E0E–0x2E92**: six further callback dispatches using
+  **slot+0x96**, then saving again.
+- **PC 0x18C0** contains the Z80 indirect jump `JP (HL)`, providing the
+  generic callback trampoline used by both passes.
+
+All **48 forward transfers, 48 reversed transfers, six initialization
+sequences and 12 callback sequences** were checked against the original
+master Z80 executable, including their exact stack/pointer and bank addresses.
+
+A private verification report can be regenerated with
+`python tools/arcade_state_serializer.py local/rom-recovery/master.mame_runtime.bin`.
+
+This explains **where the game stores per-car physics state** and provides
+an exact starting map for dynamic tracing. It does **not** establish the
+purpose of the sixth auxiliary slot, the frame rate of these callback
+passes, or the destinations selected at runtime. No claim is made that
+callback `0x18C0` itself implements collision or physics: it is an indirect
+jump to a pointer supplied by each slot.
+
+Future reverse engineering must read the stored callback pointers after
+initialisation and trace their targets, while using the 48-word scratch
+layout to identify which car values change during steering, motion,
+collisions, damage and pit service.
