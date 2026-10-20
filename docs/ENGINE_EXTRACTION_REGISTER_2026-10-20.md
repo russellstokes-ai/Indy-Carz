@@ -154,3 +154,32 @@ New [original collision candidate reconstruction](ARCADE_COLLISION_PREFILTER_202
 - **Original collision-response direction conversion recovered:** `A600–A639`, fixed-ROM 16×16 angle table stored at `A000–A1FF` in 2-byte stride; signed/quadrant scaling is entirely integer. **65,536 signed B/C input pairs tested** against bounded original Z80 execution, **zero mismatches**. Public code `tools/arcade_collision_angle_opcode_parity.py`.
 - [Full bank5 contact/angle technical record](ARCADE_COLLISION_BANK5_LOOKUP_2026-10-20.md).
 - **Still OPEN:** real collision impulse/velocity/damage after `B510`, terrain and pit/fuel/turbo logic, original track geometry, end-to-end AI/race state and debugger-enabled MAME runtime trace parity. Original-engine extraction Gate A still blocks Godot gameplay.
+
+
+### Collision-contact continuation (latest)
+
+The bank-5 6,912-entry contact table is now followed into the original
+fixed-ROM code `B510–B545`. It invokes the recovered integer angle
+converter at `A600` **twice** and compares the resulting byte angles.
+
+- The first angle call's **carry flag** is consumed immediately by a
+  16-bit `SBC HL,DE` involving car indexed field `-0x62`.
+- After three 16-bit left shifts the final shift's carry is consumed by
+  another `SBC HL,DE` involving field `-0x58`. This is not identical
+  to two ordinary coordinate subtractions.
+- The high bytes of both wrapped 16-bit differences (shifted left three
+  bits) become the second pair of signed inputs to `A600`.
+- The wrapped byte angular difference is compared against **0x40** and
+  **0xC0**, selecting original PC `B546` for values in [64,192) and
+  `B5AC` otherwise.
+- Independent reconstruction of both return-angle **and carry** across
+  **65,536** A600 input cases passed, as did **30,000** paired
+  `B510–B545` gate cases against bounded original Z80 execution, all
+  with **zero mismatches**.
+- New verifier: `tools/arcade_collision_response_gate.py`.
+  Notes: [collision mask and response angles](ARCADE_COLLISION_BANK5_LOOKUP_2026-10-20.md).
+
+**Still unverified:** semantics of indexed words -0x62 and -0x58,
+actual impulse, damage and steering changes in the two downstream
+branches; hardware-emulated full-session contact parity. The full
+commercial Godot game has **not** started; original-engine Gate A is OPEN.
