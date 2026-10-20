@@ -92,3 +92,15 @@ All original binary data, extracted graphics and candidate disassembly remain **
 - QRAM and graphics: https://github.com/mamedev/mame/blob/master/src/mame/cinematronics/leland_v.cpp
 - Runtime memory tooling: https://docs.mamedev.org/luascript/ref-mem.html
 - Debugger: https://docs.mamedev.org/debugger/
+
+
+## 20 October callback/circuit/championship extraction (subsequent work)
+
+- **Default first and second callback targets are now confirmed:** first at master `2EAF`, second at `2F1E`, installed by routine `601E` into each slot's callback fields `+94/+96`. Twelve six-slot dispatch records verified against original code.
+- **Coroutine-style continuation mechanism:** bank-3 helper `77BE` saves its caller's return PC to the first callback pointer and unwinds to the enclosing caller. 34 *candidate* yield-call signatures and two explicit redirects to callback `74C9` found in bank 3. Reachability and runtime selection remain unverified.
+- **All 14 starting grids recovered:** `6382` is a 14-pointer table, followed by 14 × five 5-byte position-and-heading records = **70 positions**. Source course index `E699`, car starting-grid selector `IX+69`. Original numeric source records are private.
+- **Original championship schedule recovered:** fixed code reads 15-byte sequence at `1ABF` using round counter `E69B`, wrapping after 15 rounds. All 14 original internal course indices appear, with internal course 1 repeated.
+- **14 per-course coordinate gates recovered:** bounds tables at `83B6` and `1ACE` are loaded into `E95B` and `E642` and tested at `7ABE..7AE2`, with exact half-open comparisons and a six-unit relative condition. These are NOT confirmed to be pits, lap lines, collision barriers or specific events.
+- Technical record: [callback and original circuit-data milestone](ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md).
+- Tools: `tools/arcade_callback_recovery.py`, `tools/arcade_start_grid_extraction.py`, `tools/arcade_course_bounds.py`. Synthetic tests require no ROM data.
+- **Still blocked:** original full racing engine and live MAME traces; Gate A has NOT passed; no Godot gameplay or commercial game build was started.
