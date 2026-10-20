@@ -247,3 +247,10 @@ gameplay development approved.
 - **50,000** original opcode vs independent integer-model two-car scenarios, **zero six-byte output mismatches**; 25,000 of each original car-pointer order. Original trig 512/512 samples and X-ROM high output 65,536/65,536 checked independently.
 - Public, ROM-gated verifier: tools/arcade_collision_velocity_projection.py; synthetic regression: tests/test_arcade_collision_velocity_projection.py; full limitations/evidence: docs/ARCADE_COLLISION_VELOCITY_PROJECTION_2026-10-20.md.
 - **Still OPEN:** B6ED and later actual contact consequences, B4EE alternative case, live MAME trace correlation, vehicle dynamics, terrain, circuits, pit/fuel/turbo/upgrades, full opponent AI and commercial release Gate A. No new Godot gameplay or concept build.
+
+## 20 October — exact B4EE alternative collision fallback dispatcher (new)
+
+- Fixed master Z80 **B4EE–B505**, a complete 24-byte branch, has been recovered and original-instruction tested. For each car record independently: when **slot+7C bit0 is clear**, invoke separately verified state-restoration routine BABB. If set, leave that car untouched. The original second-car call uses temporary IX/IY pointer exchange, not a new car-state structure.
+- Exact four bit0 combinations restore 2/1/1/0 slots. **50,000** bounded original-opcode vs independent selection-model cases, **0 mismatches**, including original BABB state-modification model; 12,500 cases for each entry combination.
+- Public verifier: tools/arcade_collision_b4ee_fallback_dispatch.py; six ROM-free regression tests. See section 6 of docs/ARCADE_COLLISION_RESPONSE_2026-10-20.md.
+- The previously open **B4EE branch selection is now verified**. Physical damage, effects after B6ED, runtime car-state traces, terrain/AI/pit/fuel/turbo/championship and Gate A remain OPEN. No new gameplay implementation.
