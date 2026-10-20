@@ -89,7 +89,62 @@ This is the exact original integer angle converter. It is **not** interchangeabl
 
 Public tool: `tools/arcade_collision_angle_opcode_parity.py`.
 
-## 5. Collision response remains open
+
+
+## 5. Exact collision-response directional branch (B510–B545)
+
+Further original Z80 analysis establishes the **approach-angle classifier**
+called after the original accepted-contact data has been read. It invokes
+the original `A600` angle conversion **twice**, comparing the current
+relative separation direction with another direction calculated from
+two indexed 16-bit fields at original offsets `IX/IY-$62` and
+`IX/IY-$58`.
+
+**Critical precision detail:** the original `A600` routine returns
+not only an 8-bit angle in register `A` but also an **observable carry
+flag**. The immediately following `SBC HL,DE` at `B51F` consumes that
+carry. The last of three `ADD HL,HL` operations then supplies another
+carry flag to the second 16-bit `SBC HL,DE` at `B531`. A rewrite that
+simply subtracts both car field pairs with ordinary subtraction will be
+wrong at specific negative/quadrant boundaries.
+
+A separately reconstructed equivalent of the original gate is:
+
+```text
+angle1, carry0 = A600(B, C)   # B/C from prior signed contact projection
+difference1 = (IY.word[-0x62] - IX.word[-0x62] - carry0) & 0xFFFF
+B = ((difference1 << 3) & 0xFFFF) >> 8
+carry1 = (difference1 >> 13) & 1
+
+difference2 = (IY.word[-0x58] - IX.word[-0x58] - carry1) & 0xFFFF
+C = ((difference2 << 3) & 0xFFFF) >> 8
+
+angle2, _ = A600(B, C)
+delta = (angle2 - angle1) & 0xFF
+
+if delta < 0x40 or delta >= 0xC0: jump B5AC
+else: proceed at B546
+```
+
+All **65,536** possible signed-component inputs were independently checked
+against the original `A600` opcodes for both **angle and carry**. Then
+**30,000 controlled comparisons** between independent arithmetic and bounded
+execution of the original `B510–B545` instructions passed without a
+mismatch, including unsigned wrap, 16-bit carry propagation and the angle
+boundary branches.
+
+Tool: `tools/arcade_collision_response_gate.py`; the model and
+`A600` flags are in `tools/arcade_collision_angle_opcode_parity.py`.
+The original array bytes remain excluded from GitHub.
+
+**Unverified interpretations:** these indexed words may represent motion
+components, but their precise storage meaning and update cadence need
+proof. Both branch outcomes lead to further contact-response code and
+are deliberately labelled by their original CPU addresses, not by
+unsupported assumptions about damage or impact types.
+
+## 6. Remaining collision recovery
+
 
 Original Z80 code after the table lookup, particularly `B510–B5AC` and the handlers near `B5C9, B985, BA20`, uses relative velocity components, current/previous position-like state, status flags and additional X-ROM lookups. Some branches call `BABB` and others modify individual car records.
 
