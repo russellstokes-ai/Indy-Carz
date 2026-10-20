@@ -46,7 +46,15 @@ def parse_postevent_handlers(rom: bytes) -> list[dict]:
         target = int.from_bytes(rom[pc + 5:pc + 7], "little")
         if not 0x2000 <= target < 0xA000:
             raise ValueError(f"Unexpected original callback target {target:04X}")
+        # Seven original handlers immediately RES their own triggering bit.
+        # Two do something else; neither's full behaviour can yet be named.
+        clears_on_entry = (
+            rom[target:target+4] ==
+            bytes([0xDD, 0xCB, offset, 0x86 + 8*((opcode >> 3) & 7)])
+        )
         result.append({
+            "clears_trigger_flag_on_entry": clears_on_entry,
+            "entry_pc": f"{target:04X}",
             "instruction_pc": f"{pc:04X}",
             "state_ix_offset": f"{offset:02X}",
             "state_bit": (opcode >> 3) & 7,
@@ -85,6 +93,10 @@ def extract(master: bytes) -> dict:
         "spatial_branch": parse_spatial_branch(master),
         "postevent_dispatch_pc": "3006..304C",
         "conditional_state_handlers": parse_postevent_handlers(master),
+        "immediately_clearing_handlers": sum(
+            bool(r["clears_trigger_flag_on_entry"])
+            for r in parse_postevent_handlers(master)
+        ),
         "additional_handler": "IX+34 AND 0x30 -> CALL NZ 113B",
         "unconditional_tail_call": "304D -> 689D",
         "confidence": "Instruction-aligned original static flow; runtime behaviour OPEN",
