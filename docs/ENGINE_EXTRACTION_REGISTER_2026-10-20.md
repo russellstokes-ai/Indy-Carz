@@ -16,8 +16,8 @@
 | Steering hardware | 3 analogue dial channels, MAME 5-bit phase/direction encoding | VERIFIED |
 | Player steering processing | Original 32-entry signed response lookup at master 0x0DCD; routine 0x0D6A, state offsets +0x79/+0x7A; further steering arithmetic in banks 0 and 3 | PARTIALLY VERIFIED |
 | Pedal | Original channel selection I/O 0x0B, input 0x09, X-ROM slot-1 lookup, IX+0x57 output; bounded opcode parity tests | PARTIALLY VERIFIED |
-| Common five-car records | State bases E080/E180/E280/E380/E480, 0x100-byte stride | VERIFIED STRUCTURE |
-| Human/AI input selection | First three car slots can be human/AI, two default AI; dispatch at master 0x6793 and AI entry 0x2263 | DISPATCH ONLY |
+| Original state-record initialisation | Original master bank-0 code 0x83FF..0x8447 initialises SIX 0x100-byte records at E580, E480, E380, E280, E180, E080 with descending slot ordinals 5..0 and bit masks 20,10,08,04,02,01. Five racing cars plus auxiliary state; purpose of sixth is still open | VERIFIED STRUCTURE |
+| Human/AI input selection | First three racer slots can be human/AI, two default AI; dispatch at master 0x6793 and AI entry 0x2263 | DISPATCH VERIFIED |\n| Original AI accelerator input | Master bank-0 0x22A2–0x22B1 stores car IX+0x57 = ((IX+0x77) >> 1) & 0x7E; B = (((IX+0x77)>>1) - (IX-0x45)) & 0xFF. 65,536 bounded original-opcode input cases checked, zero mismatches. Rest of AI pending | NUMERIC STAGE VERIFIED |
 | Two drive arithmetic stages | Z80 bank-0 PCs 0x7039 and 0x709C, original X-ROM multiplication and saturation | NUMERIC STAGES VERIFIED |
 | Intermediate movement stage | Z80 bank-0 PCs 0x71D9–0x71F9: multiply B × (IX−0x0B), scale, conditional signed negation from RAM E76C | NUMERIC STAGE VERIFIED |
 | X-ROM slot 0 | **Signed 8-bit × signed 8-bit × 2, saturated at +32767**, all 65,536 operand pairs checked with 0 mismatches | ENTIRE OUTPUT VERIFIED |
@@ -43,7 +43,7 @@
 
 - **Exhaustive original X-ROM table analysis:** the two mathematical outputs shown above matched 131,072 actual original table entries without a mismatch. They can be recreated using formulas, avoiding the need to bundle those original ROM tables into the commercial game.
 - **Conservative Z80 instruction and banked-control inventory:** all master and slave bank regions were swept privately, producing candidate assembler listings and machine-readable control-flow maps. The original 25 special fixed-code bank wrappers are handled as calls with *inline destination words* and correct bank selection.
-- **Audio inventory:** 80186 reset entry and external DAC mapping established separately from graphics/physics.
+- **Audio inventory:** 80186 reset entry and external DAC mapping established separately from graphics/physics.\n- **Original computer-driver input stage:** exact accelerator-byte assignment and saved difference recovered from master 0x22A2..0x22B1 and exhaustively tested across all 65,536 input pairs.\n- **Six record initialisation:** original master 0x83FF..0x8447 sets up six indexed car-related slots (five race cars and one additional slot), assigning distinct ordinals and bit masks.
 - **Private reports:** full bank candidate assembler listings, reachable-code listings, cross-reference summaries and X-ROM verification outputs. These are **not reconstructed source files** and are not part of the public repository.
 
 ## Critical limitations
@@ -68,7 +68,7 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 
 ## Runnable extraction tools on Draft PR #2
 
-- `tools/arcade_rom_recovery.py`: original Z80/X-ROM reconstruction
+- `tools/arcade_rom_recovery.py`: original Z80/X-ROM reconstruction\n- `tools/arcade_ai_opcode_parity.py`: verified bounded original AI pedal byte mapping (not complete AI)
 - `tools/arcade_banked_cfg.py`: conservative cross-bank Z80 structural graph (runtime mechanics unverified)
 - `tools/arcade_logic_probe.py`, `tools/arcade_steering_opcode_parity.py`, `tools/arcade_pedal_opcode_parity.py`, `tools/arcade_drive_opcode_parity.py`, `tools/arcade_displacement_opcode_parity.py`: recorded original arithmetic stages
 - `tools/arcade_xrom_math.py`: exhaustive two-table math verification
