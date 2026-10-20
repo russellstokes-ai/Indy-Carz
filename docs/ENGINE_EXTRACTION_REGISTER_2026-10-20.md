@@ -288,3 +288,11 @@ gameplay development approved.
 - Public ROM-gated verifiers: tools/arcade_service_0985_bank_copy.py and tools/arcade_collision_b86c_dispatch.py. Scope and SHA-256 source evidence: docs/ARCADE_COLLISION_0985_MEMORY_TRANSFER_B86C_2026-10-20.md.
 - **Remaining first-order blockers:** B884–B8E3 nested behaviour and BC8C, B778–B86B, complete vehicle handling and physics, live MAME bank/QRAM observation, terrain, tracks, all AI/fuel/pit/turbo/upgrade/race systems. Gate A still OPEN. No original ROM or private asset bytes were committed; existing Godot gameplay and camera baseline untouched.
 
+
+## 20 October — B884 original callback entry and post-callback return gate
+
+- **Original fixed-master B884–B8AB**: exact entry and return-gate instructions for the original B86C two-car dispatcher target. Verified source car pointer offset -0x80, **LDIR of exactly 20 state bytes** from physical car offsets 0–19 to shared scratch E72B–E73E, original E941=0xFF marker, **CALL BC8C**, then bank control E608=(post-callback E608&0xF0)|0x05 and F4 output.
+- Original INC A; RET Z at B8AB returns only when **post-callback E941 == 0xFF**. Other post-callback values continue into B8AC. The BC8C routine itself is deliberately *not* emulated or assumed, and controlled test inputs for its return state must not be mistaken for observed live-game output.
+- **30,000 bounded opcode executions against independently modelled original entry/callback-boundary/return-gate behaviour, zero mismatches**; 15,000 controlled cases per return/continue path. **Seven ROM-free tests**. Tool: `tools/arcade_collision_b884_callback_gate.py`; evidence: `docs/ARCADE_COLLISION_0985_MEMORY_TRANSFER_B86C_2026-10-20.md`.
+- **OPEN:** original BC8C branch and changes, B8AC–B8E3, second collision continuation B778–B86B, live MAME runtime evidence, full original handling/damage/AI/pits/fuel/turbo/upgrades/tracks. No original ROM/assets or speculative gameplay added to public GitHub. Commercial Gate A remains OPEN.
+
