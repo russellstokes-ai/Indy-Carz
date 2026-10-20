@@ -28,7 +28,7 @@ class Original0971EntryTests(unittest.TestCase):
 
     def test_bit0_early_return_has_no_write(self):
         record = state(gate=0x81)
-        self.assertEqual(independent(record, 90), (record, 90, 0, "ret_at_0975"))
+        self.assertEqual(independent(record, 90, 173), (record, 90, 173, "ret_at_0975"))
 
     def test_unsigned_threshold_branch_and_original_output(self):
         original = state(gate=0, threshold=3, secondary=0)
@@ -64,6 +64,8 @@ class Original0971EntryTests(unittest.TestCase):
             independent(state(), 256)
         with self.assertRaises(ValueError):
             independent(bytes(255), 0)
+        with self.assertRaises(ValueError):
+            independent(state(), 0, 256)
         with self.assertRaises(ValueError):
             execute_original(bytes(0x90000), state(), 0)
         with self.assertRaisesRegex(ValueError, "checksum-verified"):
