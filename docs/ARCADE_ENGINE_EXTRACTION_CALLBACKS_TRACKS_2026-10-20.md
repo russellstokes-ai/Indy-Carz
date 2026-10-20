@@ -70,3 +70,32 @@ Still required before Gate A closure:
 - Full component acceptance dataset, including original-vs-independent state trace parity.
 
 **Existing Godot input arithmetic adapters are unchanged.** No new gameplay build, provisional physics or artwork was introduced.
+
+
+## Targeted MAME callback tracing prepared (not executed)
+
+A specialised local-only MAME Lua script is available at
+`tools/mame_capture_callback_writes.lua`. It installs **non-invasive
+write taps** on every first/second callback pointer in the six car-state
+slots and on global original course `E699`, round counter `E69B`, and
+first-pass gate `E67D`. Initial snapshots cover callbacks that were
+installed before Lua startup. It writes a bounded private CSV of callback
+byte writes and optional CPU PC observations.
+
+```bash
+mkdir -p local/engine-extraction/runtime
+mame indyheat -rompath /private/local/rom-folder -autoboot_script tools/mame_capture_callback_writes.lua
+python tools/arcade_callback_trace_analysis.py local/engine-extraction/runtime/original_callback_write_trace.csv
+```
+
+`tools/arcade_callback_trace_analysis.py` reassembles both callback bytes
+at each frame boundary, avoiding spurious intermediate PCs while the
+original Z80 writes high and low bytes separately. The output records
+actual callback transitions and changed course/round values without
+making claims about unobserved gameplay states.
+
+The write-tap API was verified against
+https://docs.mamedev.org/luascript/ref-mem.html . Neither script has been
+run against an executable MAME game in this environment, since MAME could
+not be installed here. Synthetic trace tests pass; that is **not** live
+runtime validation. This remains an essential part of Gate A.
