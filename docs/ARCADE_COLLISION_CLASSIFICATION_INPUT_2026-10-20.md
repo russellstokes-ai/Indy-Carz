@@ -114,7 +114,7 @@ The original 20-byte fixed master Z80 stage 0971–0984 has SHA-256:
 
 Here IX points 0x80 bytes into the physical 256-byte state slot:
 
-- If original **IX+0x31 bit0 is SET** (physical slot+0xB1), the routine immediately **RET NZ at 0975**, without changing the car record. Original A is unchanged.
+- If original **IX+0x31 bit0 is SET** (physical slot+0xB1), the routine immediately **RET NZ at 0975**, without changing the car record. **Original A and incoming B are both preserved**. Do not invent B=0 for this path.
 - If that bit is CLEAR, it writes original A to **IX+0x4E** (physical slot+0xCE), stores A in B, then reads **IX-0x03** (physical slot+0x7D).
 - If that byte is **unsigned 3 or greater**, it returns at **097F** with A holding the original slot+0x7D byte and B holding the call's entry accumulator.
 - Otherwise it reads **IX+0x23** (physical slot+0xA3). When nonzero, the routine returns at **0984**, with that byte in A and the original A in B.
