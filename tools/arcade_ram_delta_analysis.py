@@ -30,7 +30,7 @@ def analyse_bytes(data: bytes) -> dict:
     if not payload or len(payload) % stride:
         raise ValueError("Truncated or empty original arcade RAM frames")
     count = len(payload) // stride
-    slot_changes = {f"E{n:03X}": [0] * 256 for n in SLOTS}
+    slot_changes = {f"{n:04X}": [0] * 256 for n in SLOTS}
     total_transitions = [0] * RECORD_BYTES
     first_frame = previous_frame = None
     last_frame_num = -1
