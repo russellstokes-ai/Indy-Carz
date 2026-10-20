@@ -316,3 +316,16 @@ Original owner-supplied 1991 arcade ROM, SHA-256 authenticated. This pass recove
 **83,535 additional verified original-instruction cases, zero mismatches.** New public ROM-gated verifiers and independent ROM-free tests: tools/arcade_championship_progression.py, tools/arcade_round_zero_linked_reset.py, tools/arcade_race_transition_gate.py (matching tests/test_*.py). Evidence: docs/ARCADE_CHAMPIONSHIP_RUNTIME_TRANSITIONS_2026-10-20.md.
 
 **OPEN:** semantics of CALL 2120 and global/slot flags, actual original race scoring and lap gates, complete AI and handling, fuel/pits/turbo/upgrades, all 14 original runtime tracks/terrain/QRAM, sound CPU behaviour, game output parity and Android commercial implementation. Original ROM and derived proprietary assets/data remain private; approved original circuit proportions and slow bounded portrait panning unchanged. Gate A remains OPEN.
+
+
+## 20 October — original 2120 multi-port handshake and interrupt-state restoration
+
+Following authenticated original bank3 championship advancement, the previously unresolved CALL 2120 has now been independently reconstructed from actual original 1991 Z80 machine instructions **for controlled port04 input responses**:
+
+- Fixed bank3 **2120–21A2**, original helper **2105–2114**, original I register/IFF2 handling and conditional DI/EI preservation.
+- Original byte stores E7AA=FE then FF, E7A4/E7A5/E7A6=80, E7A7=1, E7A8=0A; E7A9 marks a prior timeout (it can remain 1 after a later successful retry). Original E62B bit7 is set.
+- Each of up to **10 attempts** writes FF to ports 06/05 and pulses port0C FE->FF; **port04 first phase** polls for FF up to 0xC350/50,000 actual Z80 polling iterations, then writes 00 to 06/05 and **second phase** polls for 00 up to another 50,000 iterations. On timeout it retries, then restores E7A8=0A at exit. Returned IFF state matches the entry state.
+- Independent port/register/RAM state model vs genuine original Z80 opcode interpreter: **6,005** controlled input scenarios, **zero mismatches** (6,000 immediate/short poll paths, five complete 50,000-poll/retry/exhaustion scenarios). The opcode interpreter executes every original polling instruction; no inferred MAME device responses or fake timings.
+- Tools and evidence: tools/arcade_io_handshake_2120.py; tests/test_arcade_io_handshake_2120.py; docs/ARCADE_IO_HANDSHAKE_2120_2026-10-20.md.
+- **Still OPEN:** which physical device responds to original ports 04/05/06/0C in each call context, 80186 sound commands, sound/music reproduction, true event timing, full race and lap scoring, vehicle physics/AI/fuel/pits/turbo/upgrades and actual QRAM course data. This is **control-sequence parity, NOT hardware/gameplay/audio parity**. Gate A remains OPEN; Godot/car/camera original baseline untouched.
+
