@@ -119,3 +119,14 @@ and `tools/arcade_second_phase_dispatch.py`.
 interactions, identify game semantics, then use controlled MAME RAM/CPU
 traces to verify which branches execute during actual racing. The MAME
 runtime blocker is still open; this static inventory is NOT gameplay parity.
+
+
+## Further recovery: original effects/events and audio gateway (20 October)
+
+- **Original 16-slot effects allocator** at master bank0 `8659–8693`: fixed `E800–E8FF` pool of 16 × 16-byte records. First available slot chosen; when full, lowest unsigned priority replaced only by a strictly higher request (first match on ties); otherwise reject with `A=FF`. Independent formula versus bounded ORIGINAL Z80 instructions: **17,536 checked allocator cases, zero mismatches**.
+- **Original effect scheduler** at `8694–86F4`: status 0/1 cleanup; status 2 fixed-format output; status 3+ per-record callback from `+02/+03` through `18C0`. Source route `8700` clears a record. Tick/priority share the `+01` byte; do not casually replace this with generic particles.
+- **Original nine car-event handlers**: eight may allocate effect records (eight distinct `CALL 8659` instruction sites because two handlers share a common path), one updates an existing `E8xx` object. Seven handlers immediately clear their trigger bit. Their gameplay *causes* remain unverified.
+- **Audio transport**: master wrapper `0BA6` changes ROM bank and calls bank3 `2000`, which writes sound command high/low bytes through ports `05` and `06`; conditional wrapper `0B98`. Exact audible sample mapping and all gameplay causes are still OPEN.
+- **Original event producer links**: 11 instruction-aligned `SET` sites verified across master banks0/1 for the nine event bits. In particular, bank1 `50F7`/`526A` write distinct car flags after geometry calculations; `3736` and `375A` set corresponding IX/IY record flags. Runtime execution, all possible writers and the precise physics meaning remain OPEN.
+- Sources: [effect and event flag recovery](ARCADE_EFFECTS_AND_EVENT_FLAGS_2026-10-20.md), `tools/arcade_effect_allocator_opcode_parity.py`, `tools/arcade_effect_event_inventory.py` and `tools/arcade_event_flag_provenance.py`, with ROM-free tests.
+- **Next:** Trace these event producers under live MAME execution, correlate with geometry and actual collisions/fuel/pit conditions. Engine-first commercial-release Gate A is still OPEN; no Godot gameplay, prototype or speculative engine.
