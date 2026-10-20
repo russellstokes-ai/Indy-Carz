@@ -268,3 +268,12 @@ gameplay development approved.
 - **Next**: original 0971 remaining branches, B778–B86B and B86C, original circuit collision and road/terrain, full motion and AI, fuel/pits/turbo/upgrades, sound, championship and controlled real MAME runtime traces. Do not substitute guessed physics.
 
 **Memory-layout audit warning:** original IX and IY pointers sit 0x80 bytes into the physical state slots. Existing public Godot ArcadeCarRecord uses an IX-relative byte API and a logical pointer address; reconcile exact record extent and adjacent-slot boundaries under a separate test-backed audit **before** changing canonical gameplay classes.
+
+
+## 20 October — original service helper 0971 return gates
+
+- **Original fixed master Z80 0971–0984**, full 20-byte bounded entry, recovered and instruction-tested. If physical slot+0xB1 bit0 is set, return immediately with no write. Otherwise original call A is stored at slot+0xCE; if unsigned slot+0x7D>=3 return, else if slot+0xA3 is nonzero return; otherwise execution enters **0985**, which is still OPEN.
+- **131,072** exhaustive original opcode vs independent branch/state comparisons: 65,536 returns at 0975, 64,768 at 097F, 765 at 0984, three inputs explicitly rejected as unverified continuation 0985. **Zero mismatches**. These are combinatorial coverage counts, **not observed gameplay branch frequencies**.
+- The previously recovered **B728–B777** original two-car event model now composes all three original 0971 early-return exits instead of just BIT0/RET NZ. Reran **100,000 varied paired original Z80 cases with zero mismatches** while keeping the counterintuitive original 0A30-first-car IX helper sequence. Ten ROM-free B728 tests and seven ROM-free 0971 tests.
+- Public verifier: tools/arcade_collision_service_0971_entry.py; evidence: docs/ARCADE_COLLISION_CLASSIFICATION_INPUT_2026-10-20.md.
+- **Still OPEN:** the longer original 0971 continuation at 0985, B778/B86C and other collision effects, car dynamics, terrain/road/pits, AI, turbo, fuel, upgrades, complete race and championship systems, plus MAME live execution/circuit QRAM maps. Godot gameplay gate remains CLOSED.
