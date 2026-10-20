@@ -80,3 +80,19 @@ Prior bank-5 recovery shows that the original contact controller can call `BABB`
 - Independently implement the recovered complete mechanics in the **one commercial Godot release build** only after the approved engine extraction gate is met.
 
 **No new Godot gameplay code, concept, placeholder physics or test APK was produced in this recovery pass.**
+
+## 6. Original B4EE alternative collision-state fallback dispatcher — now verified
+
+The fixed master Z80 **B4EE–B505** is a 24-byte complete alternative branch, with original-code SHA-256 `519e1ee888fbe0d931a98822814cb3ead4541f51ba31e2f385595a097f58f832`. It is reached from the previously verified B63C assignment when **both car +7C bit 1 flags are set** (other call sites have not been dynamically characterized).
+
+The original dispatcher:
+
+1. Tests **first car slot +7C bit 0**; if clear, calls original **BABB** to restore that car's previous saved state.
+2. Tests **second car slot +7C bit 0**; if set, returns without touching the second car.
+3. Otherwise temporarily selects the second car as IX, invokes **BABB**, restores the first pointer and returns.
+
+Thus the exact four entry combinations for slot +7C bit 0 yield **2, 1, 1, 0** state restorations. They are not interchangeable with a generic no-op or physics bounce. BABB itself has already been verified with original opcodes to restore ten 16-bit position words, one angular-state word, optionally alter one other state word, and set status bits 0, 1 and 6.
+
+The new independent dispatch model and bounded original Z80 instruction interpreter matched across **50,000 private original-code executions**, with 12,500 cases per bit combination and zero mismatches. The original BABB output model is reused rather than duplicated. Public ROM-gated tool: `tools/arcade_collision_b4ee_fallback_dispatch.py`; ROM-free tests: `tests/test_arcade_collision_b4ee_fallback_dispatch.py` (six checks).
+
+**Scope limit:** branch selection and exact restored slot data are verified; game-visible damage, full impulse response, broader reachability and timing still require controlled emulator tracing. Original ROM inputs are private. Gate A remains OPEN.
