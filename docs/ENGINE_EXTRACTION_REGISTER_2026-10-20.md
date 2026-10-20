@@ -329,3 +329,21 @@ Following authenticated original bank3 championship advancement, the previously 
 - Tools and evidence: tools/arcade_io_handshake_2120.py; tests/test_arcade_io_handshake_2120.py; docs/ARCADE_IO_HANDSHAKE_2120_2026-10-20.md.
 - **Still OPEN:** which physical device responds to original ports 04/05/06/0C in each call context, 80186 sound commands, sound/music reproduction, true event timing, full race and lap scoring, vehicle physics/AI/fuel/pits/turbo/upgrades and actual QRAM course data. This is **control-sequence parity, NOT hardware/gameplay/audio parity**. Gate A remains OPEN; Godot/car/camera original baseline untouched.
 
+
+## 20 October — verified original race-frame events and AI linked-state pipeline
+
+The recovery now spans multiple connected original arcade master CPU stages, not merely isolated numeric arithmetic:
+
+- **Bank3 frame code 624C–627B**: original initial CALL 1078, then three IX-specific CALL 18C0 and CALL 6C8E pairs, with IX=E080/E180/E280, followed by CALL 1087 with HL=2. This is static original CALL order; all external handlers remain opaque and live frame-time parity is unverified.
+- **Bank3 6C9B–6CC5**: one original pending-event bit per call at physical car slot+77, priority bit0 then bit2 then bit1, with incoming-B-sensitive return Z. Original **6C62–6C83** three-racer global E603 gate and **6C84–6C9A** service gate also recovered. **85,632 actual Z80 opcode/model cases, zero mismatches**; ten ROM-free tests.
+- **Bank0 230B–2360**: threshold-triggered original pending event bit1/bit2, including original four B/C pairs and IY+20 linked-state exclusion. **100,000 original opcode cases, zero mismatches**, seven ROM-free tests.
+- **Bank0 22B8–230A**, composed with 230B: linked IY+0E byte countdown with original DEC A/JP M semantics, forced event/reset, two original half-open 8-bit coordinate windows sourced from E642/E95B, downstream pending-event generator. **100,000 original-code cases, zero mismatches**, nine ROM-free tests.
+- **Bank0 2263–22B7**, composed with 22B8–2360: original early RET, E603/ED59 conditional external CALL 31E6, E627 signed selector, conditional banked CALL 1190, original rounded pedal output and pending-event dispatch before tail JP 021A. **100,000 attempted original cases**: **93,212 verified bounded outputs** and **6,788 explicitly rejected unknown external calls** (31E6/1190). No mismatches; eight ROM-free tests.
+- **Fixed master 021A–028C**: original two-candidate numerical comparison from saturated wrapped coordinate deltas into private 512-byte A000-ROM odd-byte table, original byte carry/sign arithmetic and conditional branch 028D/02C3 or early 05DC. **100,000 original opcode vs numerical lookup outputs, zero mismatches**, eight ROM-free tests.
+
+**Totals this phase:** 485,632 controlled input cases across five verifiers; 478,844 verified bounded outcomes, zero mismatches, with 6,788 transparently unverified external-call cases. Nested code paths overlap, so this is NOT whole-game execution coverage or a completion percentage. **42 new ROM-free tests** across five tools/test pairs.
+
+**Evidence:** docs/ARCADE_AI_FRAME_EVENTS_AND_METRIC_2026-10-20.md. Public ROM-gated source: tools/arcade_race_signals.py, tools/arcade_ai_pending_event_rules.py, tools/arcade_ai_linked_countdown.py, tools/arcade_ai_entry_2263.py, tools/arcade_ai_distance_table.py, with corresponding tests/test_arcade_*.py. Original ROM/assembly/data remains PRIVATE.
+
+**Still OPEN:** full original 31E6 startup/race state code, banked 1190 and downstream 021A consumers, AI steering/routes/traffic/pit choices, original all-car driving/grip/damage physics, dynamic QRAM surfaces of all 14 circuits, fuel/turbo/pits/upgrades, original sound, complete results and runtime game parity. No working MAME binary was available or downloadable here, so no real-race CPU/VRAM traces are claimed. Original course geometry, original game pace and approved portrait panning remain protected. **Commercial Gate A stays OPEN.**
+
