@@ -57,7 +57,7 @@ class OriginalContactVectorTests(unittest.TestCase):
                     independent_vector(*args)
         with self.assertRaisesRegex(ValueError, "original 1991 arcade master"):
             verify(bytes(0x90000), bytes(0x40000))
-        with self.assertRaisesRegex(ValueError, "Unexpected indexed source"):
+        with self.assertRaisesRegex(ValueError, "Unexpected original contact opcode"):
             original_b5c9_opcodes(bytes(0x90000), bytes(0x40000), 7, 1, 16)
 
 
