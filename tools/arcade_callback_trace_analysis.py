@@ -35,7 +35,6 @@ def analyse(trace: str) -> dict:
         raise ValueError("Not an original Indy Carz callback write CSV")
     current: dict[int, int] = {}
     previous_pointers: dict[tuple[int, str], int] = {}
-    seen_first: dict[tuple[int, str], int] = {}
     transitions: list[dict] = []
     global_events: list[dict] = []
     raw_callbacks = 0
@@ -65,6 +64,8 @@ def analyse(trace: str) -> dict:
         latest_pc: dict[tuple[int, str], int] = {}
         for address, value, pc, kind in frames[frame]:
             if address in GLOBAL:
+                if kind not in ('snapshot_global', 'global_write'):
+                    raise ValueError(f'Unexpected global event kind at {address:04X}')
                 previous = current.get(address)
                 if kind == "global_write" and previous != value:
                     global_events.append({
