@@ -17,6 +17,8 @@
 | Player steering processing | Original 32-entry signed response lookup at master 0x0DCD; routine 0x0D6A, state offsets +0x79/+0x7A; further steering arithmetic in banks 0 and 3 | PARTIALLY VERIFIED |
 | Pedal | Original channel selection I/O 0x0B, input 0x09, X-ROM slot-1 lookup, IX+0x57 output; bounded opcode parity tests | PARTIALLY VERIFIED |
 | Original state-record initialisation | Original master bank-0 code 0x83FF..0x8447 initialises SIX 0x100-byte records at E580, E480, E380, E280, E180, E080 with descending slot ordinals 5..0 and bit masks 20,10,08,04,02,01. Five racing cars plus auxiliary state; purpose of sixth is still open | VERIFIED STRUCTURE |
+| Original working-state layout | Each of six 0x100-byte records at E000..E5FF contains an independent 0x60-byte (48-word) working state at offset 0; routines 61CE..6299 / 629A..6365 load/save this via shared scratch E72B..E789 using stack pointer transfers | EXACT SERIALIZER VERIFIED |
+| Original six-slot callback passes | 5EA1..5F12 calls 601E once per slot during initialization; 2D87..2E0B and 2E0E..2E92 each dispatch six per-slot function pointers at +0x94 and +0x96 through 18C0 (JP HL), with state copy before/after. 12 callbacks statically verified | EXACT DISPATCH STRUCTURE VERIFIED; TARGETS/TIMING OPEN |
 | Human/AI input selection | First three racer slots can be human/AI, two default AI; dispatch at master 0x6793 and AI entry 0x2263 | DISPATCH VERIFIED |\n| Original AI accelerator input | Master bank-0 0x22A2–0x22B1 stores car IX+0x57 = ((IX+0x77) >> 1) & 0x7E; B = (((IX+0x77)>>1) - (IX-0x45)) & 0xFF. 65,536 bounded original-opcode input cases checked, zero mismatches. Rest of AI pending | NUMERIC STAGE VERIFIED |
 | Two drive arithmetic stages | Z80 bank-0 PCs 0x7039 and 0x709C, original X-ROM multiplication and saturation | NUMERIC STAGES VERIFIED |
 | Intermediate movement stage | Z80 bank-0 PCs 0x71D9–0x71F9: multiply B × (IX−0x0B), scale, conditional signed negation from RAM E76C | NUMERIC STAGE VERIFIED |
@@ -58,7 +60,7 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 ## Ordered Gate A extraction work (before Godot gameplay)
 
 1. **Runtime capture:** launch the authentic arcade set in debugger-enabled MAME, verify original code-banking, read all five car state records and global race RAM every fixed update. Capture control changes for each driver and original output; pay special attention to E767/E769 angular values, E76B signed motion and E72B/E735 position-like accumulators.
-2. **Frame/update-loop:** map the master/slave CPU message handoff, per-frame call chain, original tick cadence, indexed car record fields and global RAM references.
+2. **Frame/update-loop:** decode the *runtime values* of the six per-slot function pointers at offsets +0x94/+0x96, follow 12 calls through JP(HL) at master 18C0, map the master/slave CPU handoff and frame cadence; correlate each callback with the 48-word car-specific scratch records.
 3. **Vehicle core:** decode speed, acceleration, off-throttle deceleration, lateral behaviour, heading transforms and position integration. Validate full input-to-coordinate traces.
 4. **Impact and terrain:** boundaries, walls, car collisions, damage, recovery, spin, fire and off-track slowdown.
 5. **Race management:** checkpoints, lap progress, ranking, finishing logic, pits, service timers, fuel and turbo effects.
@@ -72,6 +74,7 @@ MAME's open hardware driver is **not the original Leland game's source code**. N
 ## Runnable extraction tools on Draft PR #2
 
 - `tools/arcade_rom_recovery.py`: original Z80/X-ROM reconstruction\n- `tools/arcade_ai_opcode_parity.py`: verified bounded original AI pedal byte mapping (not complete AI)
+- `tools/arcade_state_serializer.py`: original six 96-byte working-state records, exact 48-word roundtrip and 12 indirect per-slot callbacks
 - `tools/arcade_coordinate_opcode_parity.py`: full 256-step trig mathematical reconstruction, 65,536 original Z80 two-axis position update cases
 - `tools/arcade_geometry_opcode_parity.py`: original 16-bit 8-point geometry mapping, 524,288 coordinate comparisons against bounded Z80 execution
 - `tools/arcade_banked_cfg.py`: conservative cross-bank Z80 structural graph (runtime mechanics unverified)
