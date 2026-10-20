@@ -56,7 +56,40 @@ def independent_angle(table: bytes, b: int, c: int) -> tuple[int, int]:
     return result, index
 
 
-def execute_original(master: bytes, b: int, c: int) -> tuple[int, int, int]:
+def independent_angle_with_carry(table: bytes, b: int, c: int) -> tuple[int, int, int]:
+    """Also preserve original Z80 carry flag on RET (used by later SBC HL,DE).
+
+    The simple 8-bit direction result alone is insufficient for exact
+    collision response. NEG sets carry for nonzero input; ADD 81 can carry
+    in the alternate signed quadrant; the direct table path returns with
+    carry clear from the final ADC A,0 high-page calculation.
+    """
+    if len(table) != 512 or any(not 0 <= n <= 255 for n in (b, c)):
+        raise ValueError("Expected original angle table and input bytes")
+    negative_c = bool(c & 128)
+    a = (~c & 255) if negative_c else c
+    while a >= 16:
+        a >>= 1
+        b = arithmetic_shift_byte(b)
+    c = a
+    negative_b = bool(b & 128)
+    a = (~b & 255) if negative_b else b
+    while a >= 16:
+        a >>= 1
+        c = arithmetic_shift_byte(c)
+    index = (c << 4) | a
+    result = table[2*index]
+    carry = 0
+    if negative_b:
+        total = ((~result & 255) + 0x81)
+        result, carry = total & 255, int(total > 255)
+    if negative_c:
+        before = result
+        result, carry = (-result) & 255, int(before != 0)
+    return result, index, carry
+
+
+def execute_original(master: bytes, b: int, c: int, *, include_flags: bool = False) -> tuple:
     """Execute the original A600 routine until outer RET; unknown opcodes fail."""
     if len(master) != 0x90000 or any(not 0 <= n <= 255 for n in (b, c)):
         raise ValueError("Arcade master memory/inputs not valid")
@@ -93,6 +126,8 @@ def execute_original(master: bytes, b: int, c: int) -> tuple[int, int, int]:
             if stack:
                 pc = stack.pop()
             else:
+                if include_flags:
+                    return a, ((h << 8) | l), step+1, carry
                 return a, ((h << 8) | l), step+1
         elif op == 0xCB and master[pc+1] == 0x3F:  # SRL A
             carry = a & 1
@@ -177,8 +212,11 @@ def verify(master: bytes) -> dict:
     for b in range(256):
         for c in range(256):
             expected, index = independent_angle(table, b, c)
-            actual, addr, steps = execute_original(master, b, c)
-            if actual != expected or addr != TABLE_BEGIN + index*2:
+            actual, addr, steps, carry = execute_original(master, b, c, include_flags=True)
+            modeled_value, modeled_index, modeled_carry = independent_angle_with_carry(table, b, c)
+            if ((actual, carry) != (expected, modeled_carry)
+                    or modeled_value != expected or modeled_index != index
+                    or addr != TABLE_BEGIN + index*2):
                 raise AssertionError(f"Original angle disagreement B={b} C={c}")
             checks += 1
             outputs[actual] += 1
@@ -193,6 +231,7 @@ def verify(master: bytes) -> dict:
         "original_opcode_cases": checks,
         "mismatches": 0,
         "distinct_8bit_return_values": len(outputs),
+        "carry_flag_checked": "all 65536 inputs; required by following B51F SBC HL,DE",
         "maximum_instructions_per_call": max_opcodes,
         "scope": "Original direction calculation only; impact response and full physics remain OPEN",
     }
