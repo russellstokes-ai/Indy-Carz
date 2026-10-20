@@ -12,6 +12,10 @@ A Godot 4 mobile-first overhead arcade racer inspired by the **1991 Indy Heat ar
 - **Visuals and brand:** entirely original car/track/scenery art, audio, text, names, logos, teams and sponsor identities. More polished graphics without changing gameplay.
 - **Performance:** deterministic fixed-step simulation independent of display frame rate, 60 fps rendering target, support narrow and foldable Android displays.
 
+## Commercial-release gate (approved)
+
+**Do not begin Godot gameplay or make a concept/demo/prototype build until the original arcade game engine has been recovered and its mechanics verified.** The sole target is a complete, production-grade commercial Android game. See [commercial release gate](docs/COMMERCIAL_RELEASE_GATE.md) for compulsory extraction, implementation and QA acceptance criteria.
+
 ## Development rule
 
 **Never label approximated physics as arcade-faithful.** Any mechanic must have a recorded reference observation or be marked `UNVERIFIED`. Avoid replacing game rules with third-party template physics. A clean-room implementation is preferred to committing original ROM binaries or proprietary source/assets.
