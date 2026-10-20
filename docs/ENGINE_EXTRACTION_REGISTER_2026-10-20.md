@@ -277,3 +277,14 @@ gameplay development approved.
 - The previously recovered **B728–B777** original two-car event model now composes all three original 0971 early-return exits instead of just BIT0/RET NZ. Reran **100,000 varied paired original Z80 cases with zero mismatches** while keeping the counterintuitive original 0A30-first-car IX helper sequence. Ten ROM-free B728 tests and seven ROM-free 0971 tests.
 - Public verifier: tools/arcade_collision_service_0971_entry.py; evidence: docs/ARCADE_COLLISION_CLASSIFICATION_INPUT_2026-10-20.md.
 - **Still OPEN:** the longer original 0971 continuation at 0985, B778/B86C and other collision effects, car dynamics, terrain/road/pits, AI, turbo, fuel, upgrades, complete race and championship systems, plus MAME live execution/circuit QRAM maps. Godot gameplay gate remains CLOSED.
+
+
+## 20 October — original 0985 banked transfer and B86C recovery dispatch
+
+**Fresh original arcade ROM work verified locally and pushed to this draft PR:**
+
+- **Full 158-byte original fixed-master 0985–0A22**: recovered complete bank-controlled 24-byte LDI data-copy path reached after all 0971 early-return gates fail. Original 12-entry pointer table at 289F via verified helper 176A, five F4 bank writes, exact two sets of twelve 3-row/4-column destination bus writes, full DE/BC increment/decrement carry effects and exact final E608 restoration. **50,000 original-opcode vs independently computed full-state/bus-output cases, zero mismatches**; all twelve source selectors covered, 791 destination E-wrap cases. **Eight ROM-free regressions pass.** The destination physical video/memory mapping and gameplay display effect are NOT verified; do not assert a damage display or physics consequence.
+- **Full 24-byte original fixed-master B86C–B883**: original status bit1 at each 256-byte car slot +7C controls calls to B884 (first, second, both, none), with original IX pointer swap/restore. **All 65,536 full 8-bit car-status pairs, zero original-opcode mismatches**, 16,384 in each original branch category. **Seven ROM-free tests pass.** B884 is intentionally an opaque target: this is not its full effect or game-visible response.
+- Public ROM-gated verifiers: tools/arcade_service_0985_bank_copy.py and tools/arcade_collision_b86c_dispatch.py. Scope and SHA-256 source evidence: docs/ARCADE_COLLISION_0985_MEMORY_TRANSFER_B86C_2026-10-20.md.
+- **Remaining first-order blockers:** B884–B8E3 nested behaviour and BC8C, B778–B86B, complete vehicle handling and physics, live MAME bank/QRAM observation, terrain, tracks, all AI/fuel/pit/turbo/upgrade/race systems. Gate A still OPEN. No original ROM or private asset bytes were committed; existing Godot gameplay and camera baseline untouched.
+
