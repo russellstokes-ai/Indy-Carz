@@ -29,12 +29,12 @@ class FullHandlerUnverified(ValueError):
     """Original helper continues beyond its three verified early exits."""
 
 
-def independent(slot: bytes, accumulator: int) -> tuple[bytes, int, int, str]:
+def independent(slot: bytes, accumulator: int, initial_b: int = 0) -> tuple[bytes, int, int, str]:
     """(whole slot, A, B, exit label) using independently recovered tests."""
-    if len(slot) != 256 or not 0 <= accumulator <= 255:
-        raise ValueError("Original 256-byte slot and 8-bit A required")
+    if len(slot) != 256 or not 0 <= accumulator <= 255 or not 0 <= initial_b <= 255:
+        raise ValueError("Original 256-byte slot and 8-bit A/B required")
     if slot[GATE] & 1:
-        return slot, accumulator, 0, "ret_at_0975"
+        return slot, accumulator, initial_b, "ret_at_0975"
 
     changed = bytearray(slot)
     changed[OUTPUT] = accumulator
@@ -48,18 +48,19 @@ def independent(slot: bytes, accumulator: int) -> tuple[bytes, int, int, str]:
     )
 
 
-def execute_original(master: bytes, slot: bytes, accumulator: int
-                     ) -> tuple[bytes, int, int, str]:
+def execute_original(master: bytes, slot: bytes, accumulator: int,
+                     initial_b: int = 0) -> tuple[bytes, int, int, str]:
     """Execute all original opcodes from 0971 until one verified return.
 
     The real indexed status/read/write offsets and Z80 CP/RET flags are
     interpreted directly from the supplied original executable. No slow
     path beyond 0984 is emulated.
     """
-    if len(master) != 0x90000 or len(slot) != 256 or not 0 <= accumulator <= 255:
+    if (len(master) != 0x90000 or len(slot) != 256 or not 0 <= accumulator <= 255
+            or not 0 <= initial_b <= 255):
         raise ValueError("Original master Z80, slot and 8-bit A required")
     state = bytearray(slot)
-    a, b = accumulator, 0
+    a, b = accumulator, initial_b
     zero = carry = False
     pc = START
     for _ in range(16):
@@ -135,18 +136,19 @@ def verify(master: bytes) -> dict:
                 slot[GATE] = (slot[GATE] & ~1) | status_bit
                 slot[THRESHOLD], slot[SECOND_GATE] = threshold, secondary
                 initial_a = (threshold + secondary) & 255
+                initial_b = (threshold ^ secondary) & 255
 
                 try:
-                    expected = independent(bytes(slot), initial_a)
+                    expected = independent(bytes(slot), initial_a, initial_b)
                 except FullHandlerUnverified:
                     try:
-                        execute_original(master, bytes(slot), initial_a)
+                        execute_original(master, bytes(slot), initial_a, initial_b)
                     except FullHandlerUnverified:
                         exits["unverified_0985"] += 1
                         continue
                     raise AssertionError("Original 0971 returned but model did not")
 
-                actual = execute_original(master, bytes(slot), initial_a)
+                actual = execute_original(master, bytes(slot), initial_a, initial_b)
                 if actual != expected:
                     raise AssertionError(
                         f"Original 0971 mismatch bit={status_bit}, "
