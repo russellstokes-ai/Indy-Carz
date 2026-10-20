@@ -239,3 +239,11 @@ gameplay development approved.
 - This connects the previously recovered 6,912-entry bank-5 contact lookup and approach-angle classifier to the original geometry translation paths. It does **not** recover the remaining B67E onwards velocity/damage/heading branches or special scheduler transfer at 1689.
 - Sources: [contact vector and assignment evidence](ARCADE_COLLISION_VECTOR_APPLICATION_2026-10-20.md), public validators tools/arcade_collision_b5c9_vector.py and tools/arcade_collision_b63c_assignment.py, plus ROM-free tests.
 - **Next:** classify original B67E–B8E4 event and motion handling, and verify runtime contact changes in debugger-enabled MAME. Gate A remains OPEN; no new Godot gameplay.
+
+## 20 October — exact original B67E–B6EC collision velocity projection (new)
+
+- The original fixed master Z80 stage B67E–B6EC (111 opcode bytes) checks E919 bit 5 to select first/second car ordering. It projects each car's slot +0x41 signed input through slot +0x3F heading into signed-byte sine/cosine outputs at E91F/E920 and E923/E924, then computes signed-overflow-saturated relative D/E components through original helper 0B35.
+- Signed input rounding is original SRA A / ADC A,0, equivalent to ceil(signed8(input)/2); the trigonometric X-ROM multiplication is the verified original signed 8×8 ×2 slot 0 with positive saturation. It is **not** floating-point vector normalisation or general vehicle dynamics.
+- **50,000** original opcode vs independent integer-model two-car scenarios, **zero six-byte output mismatches**; 25,000 of each original car-pointer order. Original trig 512/512 samples and X-ROM high output 65,536/65,536 checked independently.
+- Public, ROM-gated verifier: tools/arcade_collision_velocity_projection.py; synthetic regression: tests/test_arcade_collision_velocity_projection.py; full limitations/evidence: docs/ARCADE_COLLISION_VELOCITY_PROJECTION_2026-10-20.md.
+- **Still OPEN:** B6ED and later actual contact consequences, B4EE alternative case, live MAME trace correlation, vehicle dynamics, terrain, circuits, pit/fuel/turbo/upgrades, full opponent AI and commercial release Gate A. No new Godot gameplay or concept build.
