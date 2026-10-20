@@ -46,10 +46,42 @@ def confirm_routine(master: bytes) -> None:
             raise ValueError(f"Original grid-recovery instruction mismatch at {addr:04X}")
 
 
+
+def decode_championship_order(master: bytes) -> dict:
+    """Recover original 15-round sequence and exact 0x0F wrap boundary."""
+    # Master bank0 race selector $2941, bank3 wrap/switch routine $62B4.
+    if master[0x2941:0x294D] != bytes.fromhex(
+        "3a 9b e6 21 bf 1a cd 47 17 32 99 e6"
+    ):
+        raise ValueError("Original race-index table selector missing")
+    bank3_offset = 0x28000 + 0x62B4 - 0x2000
+    signature = bytes.fromhex(
+        "fe 0f 20 01 af 32 9b e6 21 bf 1a cd 47 17 32 99 e6"
+    )
+    if master[bank3_offset:bank3_offset+len(signature)] != signature:
+        raise ValueError("Original fifteen-round championship wrap logic missing")
+    course_indices = list(master[0x1ABF:0x1ABF+15])
+    if sorted(set(course_indices)) != list(range(COURSES)):
+        raise ValueError("Original championship must reference all 14 unique courses")
+    repetitions = [c for c in set(course_indices) if course_indices.count(c) > 1]
+    if len(repetitions) != 1 or course_indices.count(repetitions[0]) != 2:
+        raise ValueError("Original championship repeat layout changed")
+    return {
+        "rounds": 15,
+        "distinct_courses": COURSES,
+        "course_internal_index_per_round": course_indices,
+        "repeated_course_internal_index": repetitions[0],
+        "table_cpu_address": "1ABF",
+        "counter_ram": "E69B",
+        "selected_course_ram": "E699",
+        "wraps_at_counter": 15,
+    }
+
 def decode_course_grid(master: bytes) -> dict:
     if len(master) != 0x90000 or hashlib.sha256(master).hexdigest() != MASTER_SHA:
         raise ValueError("Original checksum-verified 1991 arcade master ROM required")
     confirm_routine(master)
+    championship = decode_championship_order(master)
     pointers = [u16(master, COURSE_POINTER_TABLE + 2*i) for i in range(COURSES)]
     if pointers[0] != COURSE_POINTER_TABLE + COURSES*2:
         raise ValueError("Original first grid table pointer unexpected")
@@ -81,6 +113,7 @@ def decode_course_grid(master: bytes) -> dict:
         "grid_slots_per_course": GRID_SLOTS,
         "total_records": COURSES*GRID_SLOTS,
         "source_data_digest_sha256": hashlib.sha256(raw).hexdigest(),
+        "original_championship": championship,
         "original_course_grids": courses,
         "limitations": "Starting grids only; NOT track boundaries, walls, lap gates, AI routes or full maps",
     }
