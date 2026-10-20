@@ -88,6 +88,46 @@ def validate_six_car_loop(master: bytes) -> list[dict]:
     return records
 
 
+
+
+def validate_six_car_dispatch(master: bytes) -> list[dict]:
+    """Validate both original six-slot indirect callback sweeps.
+
+    Fixed $18C0 is JP (HL), so addresses +$94 and +$96 are callable
+    per-slot targets. Their runtime values/purposes remain unknown.
+    """
+    if master[0x18C0] != 0xE9:
+        raise ValueError("Original JP (HL) dispatch trampoline missing")
+    results = []
+    for phase, first_pc, field in (("first", 0x2D87, 0x94),
+                                   ("second", 0x2E0E, 0x96)):
+        for slot in range(SLOTS):
+            slot_start = 0xE000 + slot * SLOT_STRIDE
+            ix = slot_start + 0x80
+            pointer = slot_start + field
+            save_end = slot_start + 0x60
+            pc = first_pc + slot * 22
+            expected = bytes([
+                0x21, slot_start & 255, slot_start >> 8,
+                0xCD, 0xCE, 0x61,
+                0xDD, 0x21, ix & 255, ix >> 8,
+                0x2A, pointer & 255, pointer >> 8,
+                0xCD, 0xC0, 0x18,
+                0x21, save_end & 255, save_end >> 8,
+                0xCD, 0x9A, 0x62,
+            ])
+            if master[pc:pc+len(expected)] != expected:
+                raise ValueError(f"Original {phase} callback slot {slot} mismatch at {pc:04X}")
+            results.append({
+                "phase": phase,
+                "slot": slot,
+                "dispatch_pc": f"{pc:04X}",
+                "callback_pointer_field": f"{field:02X}",
+                "callback_pointer_address": f"{pointer:04X}",
+                "indirect_trampoline": "18C0 (JP HL)",
+            })
+    return results
+
 def candidate_calls(master: bytes, target: int) -> list[int]:
     signature = bytes([0xCD, target & 255, target >> 8])
     return [pc for pc in range(0x2000, 0xA000-2) if master[pc:pc+3] == signature]
@@ -102,6 +142,7 @@ def inspect(master: bytes) -> dict:
     if reverse != list(reversed(forward)):
         raise AssertionError("Original state word transfer ordering does not roundtrip")
     records = validate_six_car_loop(master)
+    callbacks = validate_six_car_dispatch(master)
     loads = candidate_calls(master, 0x61CE)
     saves = candidate_calls(master, 0x629A)
     return {
@@ -113,7 +154,8 @@ def inspect(master: bytes) -> dict:
         "working_state_bytes_per_slot": WORDS*2,
         "working_state_words_per_slot": WORDS,
         "independent_slots": records,
-        "main_six_slot_pass": "5EA1..5F12",
+        "initialisation_six_slot_pass": "5EA1..5F12 (CALL 601E; meaning of initialization phase only from code context)",
+        "two_indirect_dispatch_sweeps": callbacks,
         "static_load_calls_found": len(loads),
         "static_save_calls_found": len(saves),
         "verified_call_locations_load": [f"{a:04X}" for a in loads],
