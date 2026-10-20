@@ -143,3 +143,14 @@ New [original collision candidate reconstruction](ARCADE_COLLISION_PREFILTER_202
 - **Crucial original carry behaviour:** a successful CP 06 on the first axis leaves carry set, so the second SBC HL,BC subtracts an extra 1 from the second 16-bit coordinate difference. This cannot be replaced by symmetrical floating-point distance thresholds.
 - **ROM alias confirmed:** fixed master A000..DFFF duplicates master bank-1 2000..5FFF; treat these as the same source code rather than separate modules or instruction counts.
 - Lower-level contact geometry, collision responses, damage and interactions with terrain are still OPEN, and do not become verified merely from the candidate filter.
+
+
+## 20 October — complete bank-5 contact mask addressing and angle quantisation
+
+- **Original ROM bank switching confirmed:** the collision loop selects master bank **5** at fixed `AD64` using port F4 and restores bank **0** at `B3A6`. The correct contact-table source is bank5 region offset `0x38000`, **not** the ordinary master bank0 code/data at the same visible CPU addresses.
+- **Exact contact lookup structure extracted:** 18 × 24 signed-projection bins × 16 relative-heading categories × 3 bytes = **6,912 indexed records / 20,736 bytes**, CPU addresses `2000–70FF`. First byte's sign determines whether original `B4D1..B4D3` exits; subsequent two bytes are consumed by the original response branch. Raw table classifies **4,635 negative-sign accepted entries / 2,277 early returns** (not actual game collision frequencies).
+- **All 6,912 entries tested** against bounded actual Z80 instructions and the original X-ROM with **zero address, payload or acceptance mismatches**. Public code: `tools/arcade_collision_bank5_lookup.py`; the extracted original table stays private.
+- **Original collision event bookkeeping:** `B4D4–B4ED` tracks old/new contact-table pointer (`E92A/E928`), first-byte status `E919` and acceptance counter `E927`. First two accepted contacts read subsequent payload bytes to `E91A/E91B`; third or later follows a different handler path. Physics semantics of those two bytes remain OPEN.
+- **Original collision-response direction conversion recovered:** `A600–A639`, fixed-ROM 16×16 angle table stored at `A000–A1FF` in 2-byte stride; signed/quadrant scaling is entirely integer. **65,536 signed B/C input pairs tested** against bounded original Z80 execution, **zero mismatches**. Public code `tools/arcade_collision_angle_opcode_parity.py`.
+- [Full bank5 contact/angle technical record](ARCADE_COLLISION_BANK5_LOOKUP_2026-10-20.md).
+- **Still OPEN:** real collision impulse/velocity/damage after `B510`, terrain and pit/fuel/turbo logic, original track geometry, end-to-end AI/race state and debugger-enabled MAME runtime trace parity. Original-engine extraction Gate A still blocks Godot gameplay.
