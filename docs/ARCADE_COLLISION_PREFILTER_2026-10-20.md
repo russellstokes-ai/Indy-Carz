@@ -97,3 +97,41 @@ Follow **`B3C2` onward** through the original rotated-coordinate checks, narrow 
 This stage does not resolve car-versus-wall response, terrain, turbo, pit stops, AI, championship scoring or the remaining original race system. The original gameplay implementation remains blocked by **Gate A: complete arcade-engine extraction and validation**.
 
 **Runtime limitation:** debugger-enabled MAME is still unavailable in the current session. Bounded original opcode execution is stronger than a flat disassembly for these isolated branches, but does not establish full per-frame gameplay parity.
+
+
+## 6. Original collision relative-distance scaling — recovered
+
+Immediately after the two shared-entry flag checks, the original master
+CPU routine **`B3C2–B3DB`** transforms the supplied 16-bit relative
+coordinates in `DE` and `HL` to signed/rounded **8-bit** values in `B`
+and `C`. The complete bounded instruction sequence is:
+
+- Three arithmetic high-byte shifts and carry-based low-byte rotations per axis
+- An original `ADC A,0` rounding step
+- Output register B for the first axis, C for the second
+
+Its bit-exact independent mathematical equivalent is:
+
+```text
+def axis_word_to_byte(word16):
+    signed = word16 - 65536 if word16 >= 32768 else word16
+    return ((signed + 4) >> 3) & 255
+
+B = axis_word_to_byte(DE)
+C = axis_word_to_byte(HL)
+```
+
+The original signed/right-shift and rounding behaviour is important for
+negative coordinate separations; naive division with truncation to zero
+would differ for many contacts. The independent model was validated against
+the original Z80 instruction bytes over **all 65,536 input words**, checking
+**131,072 output bytes** (both axes), with **zero mismatches**.
+
+Tool: `tools/arcade_collision_delta_scale.py`. ROM-free regression:
+`tests/test_arcade_collision_delta_scale.py`.
+
+**Remaining from B3DC onward:** rotated contact geometry and direction
+tests (including the B45A function), contact classification, velocity
+changes, damage/event flag writes and two-car impulse/separation handling.
+This recovered scaling stage alone does NOT demonstrate complete collision
+resolution or car dynamics.
