@@ -97,7 +97,7 @@ class OriginalPortHandshakeTests(unittest.TestCase):
             independent(((0, 0),), 0, True, -1)
         with self.assertRaises(ValueError):
             independent(((0, 0),), 0, 1, 0)
-        with self.assertRaisesRegex(ValueError, "checksum-verified"):
+        with self.assertRaisesRegex(ValueError, "(?i)checksum-verified"):
             check_original(bytes(0x90000))
         with self.assertRaises(ValueError):
             original_opcode(bytes(0x90000), ((0, 0),), 0, False, 0)
