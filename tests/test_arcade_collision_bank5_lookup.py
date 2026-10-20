@@ -20,6 +20,13 @@ def synthetic_roms():
     m[0xB4A3:0xB4D4] = INDEX_STAGE
     m[0xAD64:0xAD6D] = bytes.fromhex("e6 f0 f6 05 32 08 e6 d3 f4")
     m[0xB3A6:0xB3B1] = bytes.fromhex("3a 08 e6 e6 f0 32 08 e6 d3 f4 c9")
+    m[0xB4D4:0xB4EE] = bytes.fromhex(
+        "ed 5b 28 e9 ed 53 2a e9 22 28 e9 32 19 e9 "
+        "3a 27 e9 3c 32 27 e9 fe 03 da 06 b5"
+    )
+    m[0xB506:0xB510] = bytes.fromhex(
+        "23 7e 32 1a e9 23 7e 32 1b e9"
+    )
     table = bytearray(lookup.TABLE_BYTES)
     for row in range(lookup.GRID_HEIGHT):
         for col in range(lookup.GRID_WIDTH):
