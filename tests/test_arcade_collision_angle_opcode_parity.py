@@ -6,7 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from arcade_collision_angle_opcode_parity import (
     CODE_BEGIN, CODE_END, TABLE_BEGIN, TABLE_END,
-    arithmetic_shift_byte, independent_angle, execute_original, verify,
+    arithmetic_shift_byte, independent_angle, independent_angle_with_carry,
+    execute_original, verify,
 )
 
 # Representative synthetic instructions implementing the recovered original
@@ -60,6 +61,12 @@ class OriginalAngleStageTests(unittest.TestCase):
                 self.assertEqual(observed, expected, (b, c))
                 self.assertEqual(address, TABLE_BEGIN + 2*index)
                 self.assertLess(instructions, 128)
+                modeled, modeled_index, modeled_carry = independent_angle_with_carry(
+                    self.table, b, c)
+                with_flags = execute_original(self.memory, b, c, include_flags=True)
+                self.assertEqual((modeled, modeled_index), (expected, index))
+                self.assertEqual((with_flags[0], with_flags[1], with_flags[3]),
+                                 (expected, TABLE_BEGIN + 2*index, modeled_carry))
 
     def test_wrong_original_rom_never_accepted(self):
         with self.assertRaisesRegex(ValueError, "verified 1991"):
