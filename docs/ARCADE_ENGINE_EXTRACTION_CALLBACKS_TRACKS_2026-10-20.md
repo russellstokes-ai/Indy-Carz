@@ -99,3 +99,53 @@ https://docs.mamedev.org/luascript/ref-mem.html . Neither script has been
 run against an executable MAME game in this environment, since MAME could
 not be installed here. Synthetic trace tests pass; that is **not** live
 runtime validation. This remains an essential part of Gate A.
+
+
+## Further static master update-loop recovery — 20 October 2026
+
+**Second callback** at master bank0 `0x2F1E` includes explicit runtime-phase
+branching. Original machine bytes at `0x2F3D` check global `E67D`, taking
+the shorter path when nonzero. The normal path calls routines `7676` and
+`A63A`, then a course-specific spatial check `7AB4` from PC `2F4F`.
+It handles three distinct returned accumulator values: zero (PC `2F5C`,
+including high-byte motion check `E76C < 0x18`); one (`2FE9`); and greater
+than one (`2FCE`). Those are code-level branches, not yet confirmed pit,
+lap or collision result categories.
+
+The callback then executes **nine precisely located conditional event
+dispatches** from master `0x3006–0x3044`:
+
+| PC | Triggering original car field | Tested bit | Conditional target | Original target immediately clears triggering bit? |
+|---|---|---:|---|---|
+| 3006 | IX+32 | 5 | 6C1C | Yes |
+| 300D | IX+32 | 3 | 6DFA | Yes |
+| 3014 | IX+32 | 4 | 6E06 | Yes |
+| 301B | IX+31 | 5 | 6EA6 | Yes |
+| 3022 | IX+7E | 2 | 6A18 | Yes |
+| 3029 | IX+31 | 4 | 6A3A | No |
+| 3030 | IX+32 | 6 | 6B61 | Yes |
+| 3037 | IX+32 | 7 | 6BA2 | No |
+| 303E | IX+33 | 3 | 6A51 | Yes |
+
+Each site is a verified instruction-aligned `BIT n,(IX+d)` followed by
+`CALL NZ,target`. Seven of the actual original target routines begin with
+a matching `RES n,(IX+d)`; two use other initial instructions. A separate
+`IX+34 & 0x30` aggregate test conditionally calls `113B`, followed by
+unconditional `CALL 689D` at `0x304D`.
+
+**Meaning is deliberately NOT assigned to individual handlers.** Several
+targets allocate or modify structures via `IY` and invoke other
+routines; those operations alone cannot establish whether the event
+represents damage, rendering, sound, boost, a pit event or another system.
+Full semantics need the original live state/input trace.
+
+Verified source-backed extractor:
+`tools/arcade_second_phase_dispatch.py`; ROM-free tests:
+`tests/test_arcade_second_phase_dispatch.py`. The private master ROM was
+checked directly; no derived executable bytes or graphics were committed.
+
+**Execution blocker:** the currently available container has no MAME
+executable and its package repository is unreachable (DNS resolution
+failure); the prepared MAME capture scripts remain unexecuted.
+Engine-extraction Gate A stays OPEN and no Godot gameplay development
+has been started.
