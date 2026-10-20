@@ -3,7 +3,7 @@
 
 The original master Z80 calls 0A30 against IX even inside the IY branch;
 do not "correct" that surprising pointer behaviour. This verified path
-covers cases where every invoked 0971 returns immediately via RET NZ.
+covers all three proven 0971 early exits, but NOT the deeper service path.
 All other 0971 effects are deliberately rejected, not guessed.
 """
 from __future__ import annotations
@@ -15,6 +15,12 @@ from pathlib import Path
 from random import Random
 
 from arcade_collision_contact_input_gate import execute_original as original_input_helper
+from arcade_collision_service_0971_entry import (
+    independent as service_model,
+    execute_original as original_service,
+    FullHandlerUnverified,
+    THRESHOLD, SECOND_GATE,
+)
 
 MASTER_HASH = "521d8c16fdbc85cd6cddf9e0ce5735fdb771242c5dfed86d8cefe3855a6205e7"
 START, STOP = 0xB728, 0xB778
@@ -27,10 +33,6 @@ CAR_FLAGS = 0xB3   # SET 3 then RES 4 at IX/IY+0x33
 CAR_FF = 0xE3      # IX/IY+0x63
 SOURCE = 0xF7      # IX/IY+0x77
 TARGET = 0xD7      # IX+0x57; the 0A30 call uses first IX even in IY branch
-
-
-class FullHandlerUnverified(ValueError):
-    """Original 0971 may continue into still-unrecovered RAM/ROM effects."""
 
 
 def _validate(first: bytes, second: bytes, a: int) -> None:
@@ -55,9 +57,10 @@ def independent(first: bytes, second: bytes, a: int) -> tuple[bytes, bytes, int]
         if left[GATE] & 1:
             left[TARGET] = (left[SOURCE] >> 1) & 0x7E
 
-        # Only the early-RET path of 0971 is proven in this tool.
-        if not active_car[GATE] & 1:
-            raise FullHandlerUnverified("Full original 0971 path not yet recovered")
+        # Original 0971 can return at 0975, 097F or 0984. The longer
+        # branch after 0984 must be rejected rather than simulated.
+        updated, _, _, _ = service_model(bytes(active_car), 0)
+        active_car[:] = updated
     return bytes(left), bytes(right), a
 
 
@@ -126,12 +129,10 @@ def execute_original(master: bytes, first: bytes, second: bytes, a: int
                 updated, new_a, _ = original_input_helper(master, slots[ix], a)
                 slots[ix], a = updated, new_a
             elif target == 0x0971:
-                # Actual first 5 Z80 bytes: BIT 0,(IX+31); RET NZ.
-                # Never emulate the rest of 0971 with placeholder effects.
-                if master[0x0971:0x0976] != bytes.fromhex("ddcb3146c0"):
-                    raise ValueError("Original 0971 conditional-return prefix changed")
-                if not slots[ix][GATE] & 1:
-                    raise FullHandlerUnverified("Original 0971 did not early-return")
+                # Interpret the actual bounded original 0971 opcode exits.
+                # The real continuation after 0984 is intentionally rejected.
+                changed, new_a, _, _ = original_service(master, slots[ix], a)
+                slots[ix], a = changed, new_a
             else:
                 raise ValueError(f"Unexpected original event CALL {target:04X}")
             pc += 3
@@ -175,9 +176,18 @@ def verify(master: bytes, cases: int = 100000) -> dict:
         active_mask = i % 4
         for number, slot in enumerate((left, right)):
             slot[ACTIVE] = (slot[ACTIVE] & ~2) | ((active_mask >> number & 1) << 1)
-            # Fast-return control is known precisely. Keep all active
-            # original 0971 invocations within that verified domain.
-            slot[GATE] |= 1
+            # Exercise all three original early returns without guessing
+            # any behaviour after the unverified 0985 continuation.
+            variant = (i//4 + number) % 3
+            if variant == 0:
+                slot[GATE] |= 1
+            elif variant == 1:
+                slot[GATE] &= ~1
+                slot[THRESHOLD] = 3+rng.randrange(253)
+            else:
+                slot[GATE] &= ~1
+                slot[THRESHOLD] = rng.randrange(3)
+                slot[SECOND_GATE] = 1+rng.randrange(255)
         input_a = 4+rng.randrange(124)
         reference = independent(bytes(left), bytes(right), input_a)
         machine = execute_original(master, bytes(left), bytes(right), input_a)
@@ -190,7 +200,7 @@ def verify(master: bytes, cases: int = 100000) -> dict:
         "stage_sha256": STAGE_SHA, "cases": cases, "mismatches": 0,
         "original_active_pair_paths": branches,
         "0A30": "original opcode-interpreted; operates on IX even in IY branch",
-        "0971": "verified original BIT0/RET NZ fast-return branch only",
+        "0971": "three original early-return branches opcode-verified; 0985 slow path still unverified",
         "scope": "complete B728 two-car effect path only where every invoked 0971 early-returns",
     }
 
