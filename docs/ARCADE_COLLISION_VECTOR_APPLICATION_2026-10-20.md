@@ -48,7 +48,7 @@ have NOT yet been verified.
 
 | First car status bit 1 | Second car status bit 1 | Original action |
 |---|---|---|
-| Set | Set | Jump to alternative original contact path B4EE; do not assume no collision |
+| Set | Set | Jump to original B4EE; independently tests slot+7C bit0 for each car, restoring those with bit0 clear through verified BABB |
 | Set | Clear | Double 16-bit BC/DE and translate second-car geometry via BA20 |
 | Clear | Set | Double 16-bit BC/DE and translate first-car geometry via B985 |
 | Clear | Clear | Translate first car via B985, then translate second with original borrow-dependent reversed BC/DE |
@@ -81,7 +81,7 @@ conditions; integer doubling/borrowing; geometry translation when its
 original routine returns normally.
 
 **Still open:** further impact, heading and velocity state processing from
-B67E onward, B4EE alternative case, exceptional 1689 scheduling branch,
+B6ED onward (B67E–B6EC projection now verified), exceptional 1689 scheduling branch,
 all damage/sound/event consequences, track/terrain collision, complete
 original player/AI/fuel/pit mechanics, and game-runtime parity.
 
@@ -91,3 +91,8 @@ updates and event flags with proper original bank and X-ROM contexts.
 No Godot gameplay development, concept build or alternative racing physics
 is authorised while complete original-engine Gate A remains open. Do not
 commit original ROM, disassembly, source sprites or audio to public GitHub.
+
+
+### B4EE alternative path subsequently recovered
+
+Fixed-master B4EE–B505 is now fully verified as a conditional per-car BABB restoration dispatcher: slot+7C bit0 clear triggers restoration; bit0 set skips it. 50,000 original-opcode vs independent cases, zero mismatches, including all four status combinations. See docs/ARCADE_COLLISION_RESPONSE_2026-10-20.md. The 111-byte B67E–B6EC dual-car velocity projection was also recovered with 50,000 original-code parity cases; see docs/ARCADE_COLLISION_VELOCITY_PROJECTION_2026-10-20.md. Full contact effects and original-engine Gate A remain open.
