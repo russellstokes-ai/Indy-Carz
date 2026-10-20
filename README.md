@@ -20,7 +20,7 @@ A Godot 4 mobile-first overhead arcade racer inspired by the **1991 Indy Heat ar
 
 **Never label approximated physics as arcade-faithful.** Any mechanic must have a recorded reference observation or be marked `UNVERIFIED`. Avoid replacing game rules with third-party template physics. A clean-room implementation is preferred to committing original ROM binaries or proprietary source/assets.
 
-See the [entire-game extraction register](docs/ENGINE_EXTRACTION_REGISTER_2026-10-20.md), the [original mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), and the [decompilation workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
+See the [entire-game extraction register](docs/ENGINE_EXTRACTION_REGISTER_2026-10-20.md), the [recovered callback/track/championship evidence](docs/ARCADE_ENGINE_EXTRACTION_CALLBACKS_TRACKS_2026-10-20.md), the [original mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), and the [decompilation workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
 
 ## Project structure
 
@@ -37,6 +37,6 @@ See the [entire-game extraction register](docs/ENGINE_EXTRACTION_REGISTER_2026-1
 
 **Not playable yet.** The downstream car-motion/traction, collisions, AI, pit/fuel/upgrade systems and per-race circuit geometry remain to be recovered and implemented. Debugger-enabled MAME traces and QRAM track snapshots have not been collected. Do not claim arcade gameplay parity on the basis of isolated verified arithmetic stages. See [mechanics evidence](docs/ARCADE_MECHANICS_RECOVERY_2026-10-19.md), [actual ROM inspection](docs/ROM_INSPECTION_2026-10-19.md) and [recovery workflow](docs/ARCADE_DECOMPILATION_WORKFLOW.md).
 
-## Current extraction gate\n\n**Gate A remains OPEN.** Banked master/slave CPU static control-flow surveys, original X-ROM mathematics, original per-car initialisation, part of AI pedal mapping and Intel 80186 audio mapping have been recovered. Full vehicle movement, collision, turbo, fuel, AI decision-making, race rules and original runtime trackmaps remain unresolved. No concept game, provisional physics or additional Godot gameplay changes are authorised until engine recovery is sufficiently verified.\n\n## Legal / assets
+## Current extraction gate\n\n**Gate A remains OPEN.** Banked master/slave CPU static control-flow surveys, original X-ROM mathematics, original per-car initialisation, part of AI pedal mapping and Intel 80186 audio mapping have been recovered. Default callback entries (2EAF/2F1E), a bank-3 coroutine continuation helper, all fourteen original starting grids (70 positions), the fifteen-race circuit sequence, and fourteen per-course spatial event bounds are now recovered. Complete vehicle dynamics, collision, turbo, fuel, AI decision-making, original runtime trackmaps and the event semantics of the spatial zones remain unresolved. No concept game, provisional physics or additional Godot gameplay changes are authorised until engine recovery is sufficiently verified.\n\n## Legal / assets
 
 Original ROMs, extracted code, artwork, music and game branding must not be committed to this public repository. Rebuilding mechanics with new visual assets helps establish an original product, but legal clearance of an unusually close commercial reproduction remains a separate release checkpoint.
