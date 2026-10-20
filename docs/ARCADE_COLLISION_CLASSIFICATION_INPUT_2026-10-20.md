@@ -76,3 +76,32 @@ Trace and verify B728–B777 side effects and the original 0971 call; continue t
 **Preserve the canonical Godot baseline.** The present ArcadeCarRecord uses some original IX-relative offsets; physical slot mapping requires a complete audit before refactoring this code. Do not introduce speculative physics, reshape or rotate the circuits, or release original ROM/assets in public.
 
 **Original engine Gate A remains OPEN.** No new playable Godot code, concept build or APK was produced.
+
+
+## 3. Original two-car collision response branch: B728–B777 (bounded original 0971 fast-return domain)
+
+Recovered the original **80-byte** fixed-master stage B728–B777, opcode SHA-256:
+2f1cafa7bdd97f1c002be910f91fe13276b5b7336bbb641595591b0c45f2b7ff.
+
+This section models only input cases in which every invoked original helper **0971** takes its real five-byte gate BIT 0,(IX+0x31); RET NZ, thereby performing **no further actions**. If the gate is clear, the independent and machine models deliberately reject the case as **FullHandlerUnverified** because the much longer 0971 routine is not yet understood. This limitation is essential.
+
+For each car with its original status **BIT 1 at physical slot+0xDC set**:
+- Write **0x30** at its physical slot+0xDC.
+- Write **0xFF** at its slot+0xE3 and slot+0xF7.
+- Set bit 3 and clear bit 4 at its slot+0xB3.
+- Invoke the **verified original 0A30** helper.
+- Save A, invoke original **0971** with A=0 and restore A.
+
+**Critical original pointer detail:** The second-car (IY) event branch performs original CALL 0A30 **before** exchanging IX/IY for its CALL 0971. Consequently **both 0A30 calls operate on the original first car (IX)**. When only IY's event is active, the original first car's +0xD7 output may change using its existing +0xF7 byte, but the second car's +0xD7 remains untouched by this particular routine. This is proven by the original machine-code call/pointer ordering, not an assumed design improvement.
+
+### Privately executed Z80 parity
+
+- **100,000** independently generated two-car states versus bounded original B728–B777 opcode execution, using the already opcode-verified 0A30 helper and the actual original 0971 five-byte early-return gate.
+- **Zero** full two-car record or resulting-A mismatches.
+- Exactly **25,000** scenarios for each of the original four cases: no car events, first-car event only, second-car event only, both events.
+- **Eight** ROM-free local regression tests, including a dedicated assertion for the counterintuitive original first-car pointer behaviour.
+
+Source: tools/arcade_collision_contact_two_car_fastpath.py.
+Tests: tests/test_arcade_collision_contact_two_car_fastpath.py.
+
+**Next real extraction gate:** Recover the longer original 0971 path after the initial gate, then the B778 and B86C continuations and correlate these status and input fields with real arcade execution traces. The original 24-contact-category lookup remains private. Godot gameplay, track geometry and mobile camera remain untouched; overall engine Gate A stays OPEN.
