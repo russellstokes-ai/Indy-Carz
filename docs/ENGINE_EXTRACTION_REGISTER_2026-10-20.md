@@ -254,3 +254,17 @@ gameplay development approved.
 - Exact four bit0 combinations restore 2/1/1/0 slots. **50,000** bounded original-opcode vs independent selection-model cases, **0 mismatches**, including original BABB state-modification model; 12,500 cases for each entry combination.
 - Public verifier: tools/arcade_collision_b4ee_fallback_dispatch.py; six ROM-free regression tests. See section 6 of docs/ARCADE_COLLISION_RESPONSE_2026-10-20.md.
 - The previously open **B4EE branch selection is now verified**. Physical damage, effects after B6ED, runtime car-state traces, terrain/AI/pit/fuel/turbo/championship and Gate A remain OPEN. No new gameplay implementation.
+
+
+## 20 October — original contact classification and two-car event fast path
+
+**Original source:** user-owned, SHA-256-verified master Z80/X-ROM. All proprietary binary input and contact tables remain private. Full original-engine Gate A remains OPEN; no Godot gameplay/ROM/art released.
+
+- **B6ED–B727**: recovered the original 59-byte contact-projection/three-way control-flow stage, including original 24-category indexed lookup, the E925 0x33 mask, trigonometry at A200/A500, original signed product high bytes, extra SCF/ADC carry, signed overflow saturation helper 0B3E and destinations **B728/B778/B86C**. Independently matched **100,000 original Z80 opcode executions, zero mismatches**, plus all 512 trig bytes and 65,536 X-ROM high-product bytes. Branch coverage: B728=48,520, B778=1,802, B86C=49,678.
+- **0A30–0A41**: original 18-byte conditional collision-triggered car-control byte assignment. Original IX+0x31 bit0 gates original IX+0x57 = ((IX+0x77)>>1)&0x7E. Across **65,536** original opcode input combinations, zero mismatches; A preserved. Remember physical slot offset = IX-relative offset +0x80.
+- **B728–B777**: recovered full original 80-byte paired event state update for **0971's verified early-return subdomain only**. Status at IX/IY+0x5C, writes +0x5C/+0x63/+0x33/+0x77, and original 0A30/0971 calls handled exactly. **100,000** original-code paths (25,000 per 0/IX/IY/both activation pattern), zero output or car-state mismatches. **Surprising original IX behaviour:** second-car event branch calls 0A30 against first-car IX before switching IX to IY for 0971; preserve this, do not symmetrise it. If any invoked 0971 does not early-return, verifier aborts as UNVERIFIED.
+- Public regression tools: arcade_collision_projection_classification.py (8 ROM-free tests), arcade_collision_contact_input_gate.py (6 ROM-free tests), arcade_collision_contact_two_car_fastpath.py (8 ROM-free tests).
+- Exact evidence, source SHA-256 and limitations: **docs/ARCADE_COLLISION_CLASSIFICATION_INPUT_2026-10-20.md**.
+- **Next**: original 0971 remaining branches, B778–B86B and B86C, original circuit collision and road/terrain, full motion and AI, fuel/pits/turbo/upgrades, sound, championship and controlled real MAME runtime traces. Do not substitute guessed physics.
+
+**Memory-layout audit warning:** original IX and IY pointers sit 0x80 bytes into the physical state slots. Existing public Godot ArcadeCarRecord uses an IX-relative byte API and a logical pointer address; reconcile exact record extent and adjacent-slot boundaries under a separate test-backed audit **before** changing canonical gameplay classes.
