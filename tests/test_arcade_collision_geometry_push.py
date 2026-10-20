@@ -48,7 +48,7 @@ class ArcadeCollisionGeometryTests(unittest.TestCase):
     def test_first_five_and_last_five_positions_wrap(self):
         state = bytearray(256)
         for i in range(10):
-            state[2*i:2*i+2] = (65530 + i).to_bytes(2, "little")
+            state[2*i:2*i+2] = ((65530 + i) & 65535).to_bytes(2, "little")
         state[0x7C] = 0x13
         status, updated = model(bytes(state), 0x000A, 0xFFFE)
         self.assertEqual(status, "applied")
