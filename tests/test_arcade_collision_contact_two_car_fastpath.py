@@ -7,7 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from arcade_collision_contact_two_car_fastpath import (
     START, STOP, ACTIVE, GATE, CAR_FLAGS, CAR_FF, SOURCE, TARGET,
     FullHandlerUnverified, independent, execute_original, verify,
+    THRESHOLD, SECOND_GATE,
 )
+from arcade_collision_service_0971_entry import OUTPUT as SERVICE_OUTPUT
 
 
 def car(active: bool = False, source: int = 13,
@@ -56,14 +58,30 @@ class OriginalTwoCarFastPathTests(unittest.TestCase):
         with self.assertRaises(FullHandlerUnverified):
             independent(car(), car(active=True, gate=0), 4)
 
+    def test_second_0971_early_exit_writes_original_service_output(self):
+        first = bytearray(car(active=True, gate=0))
+        first[THRESHOLD] = 3
+        updated, _, a = independent(bytes(first), car(), 90)
+        self.assertEqual(a, 90)
+        self.assertEqual(updated[SERVICE_OUTPUT], 0)
+        self.assertEqual(updated[TARGET], 33)  # Original 0A30 is gated off
+
+    def test_third_0971_early_exit_when_secondary_gate_nonzero(self):
+        second = bytearray(car(active=True, gate=0))
+        second[THRESHOLD], second[SECOND_GATE] = 2, 8
+        _, changed, a = independent(car(), bytes(second), 115)
+        self.assertEqual(a, 115)
+        self.assertEqual(changed[SERVICE_OUTPUT], 0)
+        self.assertEqual(changed[ACTIVE], 0x30)
+
     def test_input_a_preserved_and_unrelated_fields_unchanged(self):
         first, second = car(active=True), car(active=True)
         actual_first, actual_second, result_a = independent(first, second, 4)
         self.assertEqual(result_a, 4)
         changed_first = {i for i in range(256) if first[i] != actual_first[i]}
         changed_second = {i for i in range(256) if second[i] != actual_second[i]}
-        self.assertTrue(changed_first.issubset({ACTIVE, CAR_FLAGS, CAR_FF, SOURCE, TARGET}))
-        self.assertTrue(changed_second.issubset({ACTIVE, CAR_FLAGS, CAR_FF, SOURCE}))
+        self.assertTrue(changed_first.issubset({ACTIVE, CAR_FLAGS, CAR_FF, SOURCE, TARGET, SERVICE_OUTPUT}))
+        self.assertTrue(changed_second.issubset({ACTIVE, CAR_FLAGS, CAR_FF, SOURCE, SERVICE_OUTPUT}))
 
     def test_invalid_records_range_or_rom_fail_closed(self):
         with self.assertRaises(ValueError):
