@@ -66,8 +66,10 @@ class OriginalCollisionROMAddressTests(unittest.TestCase):
     def test_cpu_pointer_or_z80_a_mismatch_detected(self):
         for position in (0,1):
             m,x,rows=sample()
-            rows[0]['hl']='6D25' if position==0 else '6D24'
-            if position: rows[0]['a']='6C'
+            if position == 0:
+                for row in rows: row['hl']='6D25'
+            else:
+                rows[0]['a']='6C'
             with self.assertRaisesRegex(ValueError,'pointer/accumulator'):
                 audit_rows(rows,m,x)
 
