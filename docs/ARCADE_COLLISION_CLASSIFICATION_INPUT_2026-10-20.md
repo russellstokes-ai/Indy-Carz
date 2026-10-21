@@ -7,7 +7,7 @@
 ## 1. Original contact-projection classification: fixed master B6ED–B727
 
 - **59 actual original instruction bytes** at B6ED–B727; SHA-256 26c2518291bc6c7c30213890de48ef122aac164c519e5f90aa9a1fabad0ef215.
-- Original E919 low five bits index a **24-record, two-byte-per-entry** contact-category table at fixed master BC5C, through original indexed lookup helper 1747–174D. Cases with low-five-bit index 24–31 are not verified valid categories and are explicitly rejected in the bounded model. Original table bytes are PRIVATE, never checked into GitHub.
+- Original E919 low five bits are used without a bounds check by the original ROM lookup helper 1747–174D. There are **24 structured, two-byte-per-record contact entries** at fixed master BC5C, BUT the actual original game also indexes values **24–31** into eight adjacent 2-byte groups of original program code. Live MAME execution verified those categories in 47 of 130 sampled events. The old rejection of categories 24–31 was a fidelity bug and is now corrected in the verifier. The table/code source bytes remain PRIVATE.
 - The first selected table byte has its 0x33 bits stored in original RAM E925. Its 0xC0 bits are added modulo 256 to original IY-0x43, i.e. physical state-slot +0x3D, to determine a trigonometric orientation.
 - Original cosine/sine pages A200/A500 and original signed 8×8 doubled X-ROM multiplication then project the existing D/E bytes to high signed product bytes.
 - Original SCF; ADC A,H adds one extra unit to the two signed high bytes; original helper 0B3E saturates overflow at [-128,127].
@@ -27,7 +27,7 @@
 | Original signed X-ROM high-result bytes checked | **65,536/65,536** |
 | ROM-free local tests | **8 passed** |
 
-The exact master stage, original private 24-record table, indexed lookup helper and signed-overflow helper have pinned SHA-256 signatures. Unsupported opcodes, addresses, call stacks and category values are rejected rather than silently approximated.
+The exact original master stage, 24 structured records plus its full 32-index original ROM read window, indexed lookup helper and signed-overflow helper have pinned SHA-256 signatures. Original indices 0–31 are all accepted as genuine behaviour, while unsupported instructions, bad addresses, unbalanced calls and unauthenticated original files still fail closed.
 
 Public source: tools/arcade_collision_projection_classification.py; ROM-free tests: tests/test_arcade_collision_projection_classification.py.
 
@@ -71,7 +71,7 @@ ROM-free regressions:
 
 ## Outstanding engine-wide gate
 
-Complete original 0971 effects after its verified early exits, and follow the original B728–B777 collision branch into B778–B86B and negative B86C; obtain controlled MAME in-game frame/CPU/RAM traces; recover road and pit masks, actual dynamics, full AI, fuel, turbo, repairs, upgrades and the championship systems.
+Continue the still-unverified original 0971 physical effects and BCFA–BE** collision calculations. The original 0985 memory transfer, B728 event, chained B778/B86C dispatcher, B884 return gate, B8AC scratch copy and BC8C retry/rollback have subsequently been verified in bounded and/or live MAME tests. Road/pit masks, force impulses, full handling/AI, fuel, turbo, repairs, upgrades and the championship presentation remain open.
 
 **Preserve the canonical Godot baseline.** The present ArcadeCarRecord uses some original IX-relative offsets; physical slot mapping requires a complete audit before refactoring this code. Do not introduce speculative physics, reshape or rotate the circuits, or release original ROM/assets in public.
 
@@ -104,7 +104,7 @@ For each car with its original status **BIT 1 at physical slot+0xDC set**:
 Source: tools/arcade_collision_contact_two_car_fastpath.py.
 Tests: tests/test_arcade_collision_contact_two_car_fastpath.py.
 
-**Next real extraction gate:** Recover the longer original 0971 path from 0985, then the B778 and B86C continuations and correlate these status and input fields with real arcade execution traces. The original 24-contact-category lookup remains private. Godot gameplay, track geometry and mobile camera remain untouched; overall engine Gate A stays OPEN.
+**Updated extraction gate, 21 October:** The original 0985 transfer, chained B778/B86C paths, real 0–31 indexed-ROM behaviour, B884/B8AC return/copy and BC8C counter/reset have since been recovered to explicitly bounded scopes. Actual collision impulses, damage/terrain interactions and the remainder of original BCFA–BE** remain OPEN. Public ROM-free tools never embed original private program/table bytes. Protected Godot camera, original circuit geometry and gameplay speed remain unchanged; engine Gate A OPEN.
 
 
 ## 4. Original 0971 entry and three early-return gates: fixed master 0971–0984
@@ -132,3 +132,27 @@ Here IX points 0x80 bytes into the physical 256-byte state slot:
 Public verifier: tools/arcade_collision_service_0971_entry.py; ROM-free tests: tests/test_arcade_collision_service_0971_entry.py.
 
 The B728 original paired-event verifier was extended and **rerun on 100,000 private original-code cases with zero mismatches**, exercising all three verified 0971 returns. The original first-car IX helper-call ordering remains unchanged. No speculation, gameplay or original graphical assets were added.
+
+## 21 October live original collision correction and BC8C follow-on
+
+The original 24-record contact table is NOT a 24-value runtime index range:
+actual MAME collision categories 24–31 read adjacent instruction bytes.
+Across 259 original collision projection chains, actual debugger PCs
+B728/B778/B86C matched full fall-through sequences with zero mismatches.
+The original B884 two-car response dispatcher and 66-byte B8AC state
+restore have separately been observed live, preserving original IX/IY
+call ordering and byte-exact RAM writes.
+
+Following that work, original BC8C–BCAF bank-control/status and
+BCA5–BCF9 retry/reset/rollback were compared against genuine original
+Z80 instructions in 95,536 further cases with zero differences,
+including all eleven exact saved geometry/heading word transfers.
+
+A separate actual 9,000-frame MAME run observed 16,691 BC8C entries
+and 16,791 BCA5 retry checks with zero bank/counter branch mismatches,
+but it did NOT observe original fallback helper C468. This means
+fallback has original-opcode parity, NOT live gameplay parity.
+
+See docs/ARCADE_COLLISION_BC8C_RETRY_LIVE_2026-10-21.md and public
+tools/arcade_live_collision_bc8c_audit.py.
+
