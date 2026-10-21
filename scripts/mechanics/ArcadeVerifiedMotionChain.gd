@@ -15,6 +15,7 @@ const Xrom = preload("res://scripts/mechanics/ArcadeDriveXromAccumulator.gd")
 const Velocity = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd")
 const Heading = preload("res://scripts/mechanics/ArcadeDriveHeadingProjection.gd")
 const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
+const Correction = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 
 const E76B: int = 0xE76B
@@ -112,3 +113,40 @@ static func advance_from_original_input(master_ram: PackedByteArray,
     continuation["entry"] = entry
     continuation["motion_update_skipped"] = false
     return continuation
+
+
+
+static func advance_through_original_motion_correction(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_b: int,
+        original_c: int,
+        original_2000_rom_factor: int) -> Dictionary:
+    ## Connected bounded original 71C8–72D2 physics. Both the original
+    ## selected B/C bytes and original 0x2000+IX+3C table factor MUST be
+    ## supplied by an authenticated earlier original-compatible stage.
+    ##
+    ## The direct skip at 71C8 jumps TO 726D, so 726D DOES still run.
+    ## A CALL PE 1689, by contrast, never reaches 726D normally.
+    ## This distinction is essential: direct skip is NOT an early
+    ## return from the whole physics update.
+    assert(master_ram.size() == State.LENGTH)
+    assert(original_b >= 0 and original_b <= 255)
+    assert(original_c >= 0 and original_c <= 255)
+    assert(original_2000_rom_factor >= 0 and original_2000_rom_factor <= 255)
+
+    var first: Dictionary = advance_from_original_input(
+        master_ram, physical_car, original_b, original_c)
+    if not first["complete"]:
+        # Non-local original diagnostic/overflow handler; no invented
+        # continuation into collision/motion/steering is allowed.
+        first["motion_correction"] = {}
+        return first
+    assert(first["next_pc"] == 0x726D)
+    var correction: Dictionary = Correction.apply_to_ram(
+        first["ram"], original_b, original_2000_rom_factor)
+    assert(correction["next_pc"] == 0x72D3)
+    first["ram"] = correction["ram"]
+    first["motion_correction"] = correction
+    first["next_pc"] = 0x72D3
+    return first
