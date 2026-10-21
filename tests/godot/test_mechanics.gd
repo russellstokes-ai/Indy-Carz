@@ -10,6 +10,7 @@ const Pedal = preload("res://scripts/mechanics/ArcadePedalInput.gd")
 const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
 const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
 const CollisionRetry = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
+const CollisionTranslation = preload("res://scripts/mechanics/ArcadeCollisionTranslation.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -34,6 +35,7 @@ func _initialize() -> void:
     _test_original_car_state_bridge()
     _test_original_live_motion_geometry()
     _test_verified_collision_retry()
+    _test_verified_collision_translation()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -375,6 +377,77 @@ func _test_verified_collision_retry() -> void:
     var wrapped: Dictionary = CollisionRetry.retry(exhausted, 0xE080)
     _verify(wrapped["next_pc"] == 0xBCFA and wrapped["counter"] == 0,
             "original Z80 retry FF-to-zero wraps and skips rollback")
+
+
+func _test_verified_collision_translation() -> void:
+    # Entire original fixed master BE0D-BE67 subroutine: an existing
+    # collision response supplies two new positions, and this bounded
+    # routine shifts its eight related shared-state geometry/position words.
+    # Do NOT mistake this for full traction or wall-collision gameplay.
+    var cases: Array = [
+        [1234, 1234, 5678, 5678],
+        [1234, 1235, 5678, 5678],
+        [1234, 1234, 5678, 5679],
+        [0, 65535, 65535, 0],
+        [65535, 0, 0, 65535],
+        [32123, 55123, 37128, 61234]
+    ]
+    for values in cases:
+        var original_ram: PackedByteArray = PackedByteArray()
+        original_ram.resize(CollisionRetry.LENGTH)
+        original_ram.fill(0xA5)
+        var old_x: int = values[0]
+        var new_x: int = values[1]
+        var old_y: int = values[2]
+        var new_y: int = values[3]
+        CollisionRetry._set16(original_ram, 0xE731, old_x)
+        CollisionRetry._set16(original_ram, 0xE98D, new_x)
+        CollisionRetry._set16(original_ram, 0xE73B, old_y)
+        CollisionRetry._set16(original_ram, 0xE98F, new_y)
+        var x_originals: Dictionary = {}
+        var y_originals: Dictionary = {}
+        var n: int = 0
+        for address in CollisionTranslation.ORIGINAL_X_WORDS:
+            var old_word: int = (0xFFFE + n * 341) & 65535
+            CollisionRetry._set16(original_ram, address, old_word)
+            x_originals[address] = old_word
+            n += 1
+        for address in CollisionTranslation.ORIGINAL_Y_WORDS:
+            var old_word: int = (0x00FD + n * 847) & 65535
+            CollisionRetry._set16(original_ram, address, old_word)
+            y_originals[address] = old_word
+            n += 1
+        original_ram[0xE600 - 0xE000] = 0xDA
+        var result: Dictionary = CollisionTranslation.apply(original_ram)
+        var updated: PackedByteArray = result["ram"]
+        var dx: int = (new_x - old_x) & 65535
+        var dy: int = (new_y - old_y) & 65535
+        _verify(result["delta_x"] == dx and result["delta_y"] == dy,
+                "original BE0D two independent wrapped 16-bit translation values")
+        _verify(result["x_branch"] == (dx != 0) and
+                result["y_branch"] == (dy != 0) and
+                result["next_pc"] == 0xBCA5,
+                "original BE0D zero-delta JR Z paths and retry continuation")
+        _verify(CollisionRetry.get16(updated, 0xE731) == new_x and
+                CollisionRetry.get16(updated, 0xE73B) == new_y,
+                "original collision geometry reference words replaced")
+        _verify(CollisionRetry.get16(updated, 0xE98D) == new_x and
+                CollisionRetry.get16(updated, 0xE98F) == new_y,
+                "original collision target words are never altered")
+        for address in CollisionTranslation.ORIGINAL_X_WORDS:
+            _verify(CollisionRetry.get16(updated, address) ==
+                    ((x_originals[address] + dx) & 65535),
+                    "exact original X-axis geometry translation at %04X" % address)
+        for address in CollisionTranslation.ORIGINAL_Y_WORDS:
+            _verify(CollisionRetry.get16(updated, address) ==
+                    ((y_originals[address] + dy) & 65535),
+                    "exact original Y-axis geometry translation at %04X" % address)
+        _verify(original_ram[0xE600 - 0xE000] == 0xDA and
+                updated[0xE600 - 0xE000] == 0xDA,
+                "original BE0D cannot change unrelated 256-byte car records")
+        _verify(CollisionRetry.get16(original_ram, 0xE731) == old_x and
+                CollisionRetry.get16(original_ram, 0xE73B) == old_y,
+                "original bounded translation never mutates the input RAM")
 
 
 func _test_portrait_camera() -> void:
