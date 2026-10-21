@@ -56,7 +56,7 @@ Authentic original code and table range, fixed helper and bank4 208C have pinned
 Public original-ROM-gated tool: **tools/arcade_bank4_race_init_2000.py**.  
 ROM-free regression: **tests/test_arcade_bank4_race_init_2000.py**.
 
-This recovery makes the two initial bank4 far-call targets from original fixed 1190 substantially understandable as bounded car-selection and state-initialization routines. **It does not recover the rest of 1190's caller response**, the original 22BA metric and 213F+ selection consequences, all downstream AI driving, original terrain/collision/upgrade/fuel/pit logic, fourteen dynamic trackmaps or live MAME behaviour.
+This recovery makes the two initial bank4 far-call targets from original fixed 1190 substantially understandable as bounded car-selection and state-initialization routines. **It does not recover the rest of 1190's caller response**, the remaining 213F+ selection consequences, full downstream AI driving, original terrain/collision/upgrade/fuel/pit logic, fourteen dynamic trackmaps or live MAME behaviour. The original 22BA **numerical routine is now fully recovered to its 2304 return**; see docs/ARCADE_BANK4_METRIC_22BA_2026-10-21.md.
 
 No Godot gameplay, licensed artwork, circuit geometry, physics, camera or APK changes were made. The original-ROM data stayed in the user's private local research workspace, not the public GitHub repository.
 
