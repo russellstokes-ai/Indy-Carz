@@ -154,6 +154,28 @@ func _test_original_drive_byte_stages() -> void:
 func _test_original_car_state_bridge() -> void:
     var record = Car.new()
     _verify(record.snapshot_bytes().size() == 0x100, "original car-record length")
+    # Independent original Z80 opcode + actual MAME state: IX points 0x80
+    # bytes INTO the backing physical 0x100-byte state record.
+    _verify(Car.racer_slot_start(0) == 0xE000 and
+            Car.racer_slot_start(4) == 0xE400,
+            "original physical state slots begin 0x80 below Z80 IX")
+    _verify(Car.ix_displacement_to_slot_offset(0x57) == Car.FIELD_PEDAL_RESPONSE and
+            Car.ix_displacement_to_slot_offset(0x58) == Car.FIELD_PEDAL_FACTOR and
+            Car.ix_displacement_to_slot_offset(0x59) == Car.FIELD_PEDAL_BIAS,
+            "pedal records are at physical +D7/+D8/+D9, not +57/+58/+59")
+    _verify(Car.ix_displacement_to_slot_offset(0x79) == Car.FIELD_STEERING_PRIMARY and
+            Car.ix_displacement_to_slot_offset(0x7A) == Car.FIELD_STEERING_SAMPLE and
+            Car.ix_displacement_to_slot_offset(0x7B) == Car.FIELD_STEERING_STATE,
+            "steering records are at physical +F9/+FA/+FB")
+    _verify(Car.ix_displacement_to_slot_offset(0x32) == Car.FIELD_PEDAL_TIMEOUT_FLAG and
+            Car.ix_displacement_to_slot_offset(0x54) == Car.FIELD_WEIGHTED_DRIVE_BIAS,
+            "original input flag +B2 and weighted drive bias +D4")
+    _verify(Car.ix_displacement_to_slot_offset(-0x3F) == 0x41,
+            "negative IX displacement maps original shared motion byte")
+    # The *old incorrect offsets* must remain untouched during processing.
+    record.write_u8(0x57, 0xA5)
+    record.write_u8(0x7A, 0x5A)
+    record.write_u8(0x32, 0xE0)
     _verify(Car.racer_ram_base(0) == 0xE080, "first arcade racer address")
     _verify(Car.racer_ram_base(4) == 0xE480, "fifth arcade racer address")
 
@@ -163,12 +185,16 @@ func _test_original_car_state_bridge() -> void:
     var accel: Dictionary = bridge.sample_original_pedal(2, record)
     _verify(accel["response"] == 2, "original pedal bridge response")
     _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 2,
-            "original pedal writes byte IX+$57")
+            "original pedal writes actual physical slot+D7 (IX+57)")
+    _verify(record.read_u8(0x57) == 0xA5,
+            "pedal input must not corrupt unrelated physical slot+57")
 
     var wheel: Dictionary = bridge.sample_original_wheel(0, 1, record)
     _verify(wheel["steering_response"] == -12, "original steering bridge response")
     _verify(record.read_i8(Car.FIELD_STEERING_SAMPLE) == -12,
-            "original steering sample reads as signed byte")
+            "original steering sample reads as signed byte at physical slot+FA")
+    _verify(record.read_u8(0x7A) == 0x5A,
+            "steering input must not corrupt unrelated physical slot+7A")
     _verify(record.read_u8(Car.FIELD_STEERING_PRIMARY) == 0,
             "conditional original steering primary field untouched")
 
@@ -176,7 +202,9 @@ func _test_original_car_state_bridge() -> void:
     _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 0x7E,
             "original pedal timeout response")
     _verify((record.read_u8(Car.FIELD_PEDAL_TIMEOUT_FLAG) & 2) == 2,
-            "original pedal timeout sets bit 1")
+            "original pedal timeout sets bit 1 at physical slot+B2")
+    _verify(record.read_u8(0x32) == 0xE0,
+            "original timeout must not change unrelated physical slot+32")
 
     var copy: PackedByteArray = record.snapshot_bytes()
     copy[Car.FIELD_PEDAL_RESPONSE] = 0
