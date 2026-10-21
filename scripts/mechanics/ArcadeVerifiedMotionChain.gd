@@ -14,6 +14,8 @@ const State = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
 const Xrom = preload("res://scripts/mechanics/ArcadeDriveXromAccumulator.gd")
 const Velocity = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd")
 const Heading = preload("res://scripts/mechanics/ArcadeDriveHeadingProjection.gd")
+const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
+const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 
 const E76B: int = 0xE76B
 const E768: int = 0xE768
@@ -69,3 +71,44 @@ static func advance_verified_segment(master_ram: PackedByteArray,
         "motion": motion,
         "heading_projection": projection
     }
+
+
+
+static func advance_from_original_input(master_ram: PackedByteArray,
+                                        physical_car: ArcadeCarRecord,
+                                        original_b: int,
+                                        original_c: int) -> Dictionary:
+    ## Composed original 71C8–726C. Original B/C come from the earlier
+    ## per-car/course table-selection code; they must NOT be guessed.
+    ## This method intentionally does not alter the supplied car record.
+    assert(master_ram.size() == State.LENGTH)
+    assert(original_b >= 0 and original_b <= 255)
+    assert(original_c >= 0 and original_c <= 255)
+
+    var entry: Dictionary = Entry.calculate(
+        physical_car.read_u8(Car.FIELD_PEDAL_RESPONSE), original_b,
+        original_c, physical_car.read_u8(0x75),
+        State.get8(master_ram, 0xE76C))
+
+    if entry["next_pc"] == 0x726D:
+        # Original Z80 JP Z,726D: skips 71FA, 7225 and 7245.
+        # Unrelated master RAM and caller's physical car stay unchanged.
+        return {
+            "complete": true,
+            "motion_update_skipped": true,
+            "next_pc": CONTINUE_PC,
+            "ram": master_ram.duplicate(),
+            "entry": entry,
+            "xrom": {},
+            "motion": {},
+            "heading_projection": {}
+        }
+
+    assert(entry["next_pc"] == 0x71FF or entry["next_pc"] == 0x7225)
+    # If entry is 7225, original C is zero: the 71FA helper itself
+    # takes the zero-C branch to 7225 without the X-ROM lookup.
+    var continuation: Dictionary = advance_verified_segment(
+        master_ram, original_c, entry["de"])
+    continuation["entry"] = entry
+    continuation["motion_update_skipped"] = false
+    return continuation
