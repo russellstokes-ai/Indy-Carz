@@ -1,0 +1,37 @@
+name: Matching Ubuntu 24.04 MAME ELF loader
+
+on:
+  push:
+    paths:
+      - ".github/workflows/mame-loader-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-loader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Capture loader and compatible glibc for local original arcade research
+        run: |
+          set -euo pipefail
+          mkdir -p portable-mame-loader
+          loader="$(readlink -f /lib64/ld-linux-x86-64.so.2)"
+          cp -L "$loader" portable-mame-loader/ld-linux-x86-64.so.2
+          cp -L /lib/x86_64-linux-gnu/libc.so.6 portable-mame-loader/libc.so.6
+          cp -L /lib/x86_64-linux-gnu/libm.so.6 portable-mame-loader/libm.so.6
+          "$loader" --version | head -1
+          sha256sum portable-mame-loader/*
+          printf 'Run the matching Ubuntu loader explicitly:\n' > portable-mame-loader/README.txt
+          printf './ld-linux-x86-64.so.2 --library-path ../portable-mame/lib:./ ../portable-mame/bin/mame -version\n' >> portable-mame-loader/README.txt
+          tar -czf portable-mame-loader.tar.gz portable-mame-loader
+      - name: Upload only redistribution libraries (NO ROM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-mame-loader
+          path: portable-mame-loader.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
