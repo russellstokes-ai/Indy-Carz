@@ -47,6 +47,7 @@ func _initialize() -> void:
     _test_original_angular_motion_limit()
     _test_original_steering_7315()
     _test_original_steering_7376_lookup()
+    _test_connected_original_steering_prefix()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -828,6 +829,67 @@ func _test_original_steering_7376_lookup() -> void:
     _verify(composed["next_pc"] == 0x73CD and
             composed["branch"] == "blended_indices",
             "original 7315 early exit enters recovered 7376 lookup stage")
+
+
+func _test_connected_original_steering_prefix() -> void:
+    # Connected verified original 71C8 -> 7315/7376.
+    # Every input is synthetic; original ROM table is not distributed.
+    var lookup: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        lookup.append((i * 57 + 113) & 255)
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        var master: PackedByteArray = PackedByteArray()
+        master.resize(0x2000)
+        master.fill(0)
+        CollisionRetry._set16(master, 0xE771, 0x0100)
+        CollisionRetry._set16(master, 0xE773, 0x0200)
+        CollisionRetry._set16(master, ix + 0x4C, 0)
+        master[ix + 0x70 - 0xE000] = 130
+        master[ix + 0x71 - 0xE000] = 21
+        master[0xE600 - 0xE000] = 0xE3
+
+        var car: ArcadeCarRecord = Car.new()
+        car.write_u8(Car.FIELD_PEDAL_RESPONSE, 16)
+        car.write_u8(0x75, 0)
+        var input_copy: PackedByteArray = master.duplicate()
+
+        # This route executes the original 7315 stage and jumps straight
+        # to the already opcode-verified coordinate stage at 7530.
+        var normal: Dictionary = MotionChain.advance_through_original_steering_selection(
+            master, car, ix, 0, 0, 0, 0, lookup)
+        _verify(normal["complete"] and normal["next_pc"] == 0x7530 and
+                normal["steering_7315"]["branch"] == "passthrough",
+                "connected original steering normal route reaches 7530")
+        _verify(normal["ram"] == master,
+                "zero-motion steering normal stage changes no original RAM")
+        _verify(master == input_copy,
+                "original verified whole prefix does not mutate input")
+
+        CollisionRetry._set16(master, 0xE771, 0x00FF)
+        var first: Dictionary = MotionChain.advance_through_original_steering_selection(
+            master, car, ix, 0, 0, 0, 0, lookup)
+        _verify(not first["complete"] and
+                first["verified_prefix_complete"] and
+                first["next_pc"] == 0x73CD and
+                first["steering_7315"]["next_pc"] == 0x7376 and
+                first["steering_7376"]["branch"] == "halved_car70",
+                "original 7315 low E771 to 7376 to 73CD is preserved")
+        _verify(first["steering_7376"]["b"] == (lookup[4] >> 1),
+                "original car70 130 aliases control-table index 2")
+        _verify(first["unverified_downstream"] == "original Z80 73CD-752F",
+                "original unknown downstream branch explicitly remains open")
+
+        CollisionRetry._set16(master, 0xE771, 0x0100)
+        CollisionRetry._set16(master, 0xE773, 0x00FF)
+        var second: Dictionary = MotionChain.advance_through_original_steering_selection(
+            master, car, ix, 0, 0, 0, 0, lookup)
+        _verify(not second["complete"] and second["next_pc"] == 0x73CD and
+                second["steering_7315"]["next_pc"] == 0x7381 and
+                second["steering_7376"]["branch"] == "halved_car71",
+                "original low E773 selector correctly enters 7381")
+        _verify(second["steering_7376"]["c"] == (lookup[43] >> 1),
+                "original 7381 chooses second index car+71 and returns exact C")
 
 
 func _test_portrait_camera() -> void:
