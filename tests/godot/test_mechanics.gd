@@ -322,7 +322,6 @@ func _test_verified_collision_retry() -> void:
     var fresh: PackedByteArray = PackedByteArray()
     fresh.resize(0x2000)
     fresh.fill(0x7F)
-    fresh[0xE768 - 0xE000] = 0xD6
     for n in range(CollisionRetry.COPY_PAIRS.size()):
         var pair: Array = CollisionRetry.COPY_PAIRS[n]
         var saved_word: int = (0x1234 + 0x0137 * n) & 0xFFFF
@@ -330,6 +329,9 @@ func _test_verified_collision_retry() -> void:
         fresh[pair[0] - 0xE000 + 1] = saved_word >> 8
         fresh[pair[1] - 0xE000] = 0
         fresh[pair[1] - 0xE000 + 1] = 0
+    # Set the old angle AFTER resetting the eleven destination words:
+    # the final 16-bit restore destination E767 overlaps E768 by design.
+    fresh[0xE768 - 0xE000] = 0xD6
 
     for ix in CollisionRetry.CAR_POINTERS:
         for count in [0, 1, 15, 16, 17, 18, 253, 254, 255]:
