@@ -75,6 +75,8 @@ def audit_rows(source:list[dict[str,str]])->dict:
         if pc=="BCA5":seen_retries[row["e92e"]]+=1
         if i+1==len(rows):continue
         next_row=rows[i+1]
+        if next_row["frame"]<row["frame"]:
+            raise ValueError("Original collision frames are not monotonic")
         next_pc=next_row["pc"]
         if next_pc not in valid_follow[pc]:
             raise ValueError(f"Original BC8C control-flow ordering invalid at {i}")
