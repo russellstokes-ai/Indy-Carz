@@ -39,7 +39,7 @@ def _validate(master:bytes,b:int,car_plus3c:int,e765:int,e933:int,e76b:int)->Non
     if len(master)!=0x90000 or any(not isinstance(x,int) for x in
         (b,car_plus3c,e765,e933,e76b)) or not (0<=b<256 and
         0<=car_plus3c<256 and 0<=e765<65536 and
-        0<=e933<65536 and 0<=e76b<65536)):
+        0<=e933<65536 and 0<=e76b<65536):
         raise ValueError("Original master, two input bytes and three 16-bit words required")
 
 def independent(master:bytes,b:int,car_plus3c:int,
