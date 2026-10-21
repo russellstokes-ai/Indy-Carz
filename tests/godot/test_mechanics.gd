@@ -538,11 +538,11 @@ func _test_original_drive_entry_chain() -> void:
     var base_ram: PackedByteArray = PackedByteArray()
     base_ram.resize(0x2000)
     base_ram.fill(0)
-    CollisionRetry._set16(base_ram, 0xE76B, 0x3456)
+    CollisionRetry._set16(base_ram, 0xE76B, 0x8056)
     CollisionRetry._set16(base_ram, 0xE933, 0x0123)
     CollisionRetry._set16(base_ram, 0xE769, 0x1200)
     base_ram[0xE768 - 0xE000] = 35
-    base_ram[0xE76C - 0xE000] = 128
+    # E76C is HIGH(E76B), already 0x80 from the genuine 16-bit motion word.
     base_ram[0xE600 - 0xE000] = 0x5A
 
     var car: ArcadeCarRecord = Car.new()
@@ -556,7 +556,7 @@ func _test_original_drive_entry_chain() -> void:
             skip_result["next_pc"] == 0x726D,
             "original 71C8 high-response/C-zero direct shortcut")
     _verify(skip_result["ram"] == base_ram and
-            CollisionRetry.get16(base_ram, 0xE76B) == 0x3456,
+            CollisionRetry.get16(base_ram, 0xE76B) == 0x8056,
             "original shortcut changes no motion state")
     _verify(car.read_u8(0x57) == 0xAB,
             "original car input mapping protects unrelated physical slot+57")
