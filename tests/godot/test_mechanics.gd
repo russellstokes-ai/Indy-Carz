@@ -11,6 +11,7 @@ const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
 const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
 const CollisionRetry = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
 const CollisionTranslation = preload("res://scripts/mechanics/ArcadeCollisionTranslation.gd")
+const VelocityGate = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -36,6 +37,7 @@ func _initialize() -> void:
     _test_original_live_motion_geometry()
     _test_verified_collision_retry()
     _test_verified_collision_translation()
+    _test_original_velocity_sign_gate()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -448,6 +450,56 @@ func _test_verified_collision_translation() -> void:
         _verify(CollisionRetry.get16(original_ram, 0xE731) == old_x and
                 CollisionRetry.get16(original_ram, 0xE73B) == old_y,
                 "original bounded translation never mutates the input RAM")
+
+
+func _test_original_velocity_sign_gate() -> void:
+    # Exact original Z80 7225..7244 crossing test, not complete
+    # acceleration or a guessed physics update rate.
+    var pairs: Array = [
+        [0x0000, 0x0000, 0x0000, "positive_keep"],
+        [0x1234, 0x0001, 0x1233, "positive_keep"],
+        [0x0000, 0x0001, 0x0000, "positive_clamp"],
+        [0x7FFF, 0xFFFF, 0x0000, "positive_clamp"],
+        [0x8000, 0xFFFF, 0x8001, "negative_keep"],
+        [0x8000, 0x0001, 0x0000, "negative_clamp"],
+        [0x0001, 0xFFFF, 0x0002, "positive_keep"],
+        [0xFFFF, 0x0000, 0xFFFF, "negative_keep"]
+    ]
+    for item in pairs:
+        var old_word: int = item[0]
+        var delta: int = item[1]
+        var expected: int = item[2]
+        var expected_path: String = item[3]
+        var result: Dictionary = VelocityGate.calculate(old_word, delta)
+        _verify(result["stored_e76b"] == expected and
+                result["branch"] == expected_path and
+                result["next_pc"] == 0x7245,
+                "original 7225 signed16 wrapped gate and exact branch")
+        _verify(result["de_after"] == expected and
+                result["hl_after"] == delta,
+                "original EX DE,HL after final E76B store")
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(0x2000)
+        ram.fill(0xA6)
+        CollisionRetry._set16(ram, 0xE76B, old_word)
+        var updated: Dictionary = VelocityGate.apply_to_ram(ram, delta)
+        _verify(CollisionRetry.get16(updated["ram"], 0xE76B) == expected,
+                "original 7225 E76B low/high bytes stored correctly")
+        _verify(CollisionRetry.get16(ram, 0xE76B) == old_word and
+                CollisionRetry.get8(updated["ram"], 0xE600) == 0xA6,
+                "bounded original motion update preserves input and unrelated state")
+
+    # Exhaust original 16-bit sign boundary neighbourhoods and ensure
+    # no floating-point assumptions silently change the Z80 branch.
+    for prior in [0, 1, 2, 0x7FFE, 0x7FFF, 0x8000, 0x8001, 0xFFFE, 0xFFFF]:
+        for displacement in [0, 1, 2, 0x7FFE, 0x7FFF,
+                             0x8000, 0x8001, 0xFFFE, 0xFFFF]:
+            var wrapped: int = (prior - displacement) & 65535
+            var expected: int = wrapped if (
+                ((prior & 0x8000) != 0) == ((wrapped & 0x8000) != 0)
+            ) else 0
+            _verify(VelocityGate.calculate(prior, displacement)["stored_e76b"] == expected,
+                    "original velocity Z80 JP M/JP P 16-bit boundaries")
 
 
 func _test_portrait_camera() -> void:
