@@ -387,3 +387,57 @@ Combined **21 October** additions: original 2CF9 counter/timer, 31E9 race-start 
 
 **Still OPEN**: later 31E6 startup calls, bank4 caller behaviour after 213F, end-to-end car physics/handling, AI routing, all 14 runtime QRAM trackmaps and masks, pit/fuel/turbo/upgrades, real timing/audio, and commercially playable/QA-verified Android game. MAME not available in the local execution environment. No Godot gameplay/camera/circuit changes; approved original layout, pace and bounded portrait panning remain protected. **Gate A OPEN.**
 
+
+## 21 October — live BC8C fallback, BE0D collision geometry and 7225 driving motion gate
+
+**New owner-ROM and live original MAME verification — no copyrighted game data
+or private emulator memory committed to public GitHub.**
+
+- **BC8C/C468 retry failure now tested in the original running arcade.**
+  Earlier unmodified racing showed 16,691 original collision entries
+  and zero natural 18-count fallbacks. A separate, EXPLICITLY CONTROLLED
+  experiment set original E92E=0x11 at BCA5, causing the original next
+  increment to reach 0x12 (18). Genuine master CPU taps captured **30
+  actual memory writes**, with **zero source/expected-value mismatches**:
+  three original car bytes cleared, five global motion/heading reset
+  bytes, and all **22 bytes** of the eleven geometry/heading backup words.
+  This is forced-branch machine verification, NOT a natural-race event.
+  tools/mame_probe_bc8c_forced_fallback.lua requires INDY_FORCE_BC8C=1;
+  tools/arcade_controlled_collision_fallback_audit.py validates the
+  complete event order and original values. Godot
+  scripts/mechanics/ArcadeCollisionRetry.gd implements only those
+  already original-instruction-verified memory transitions. Detailed
+  evidence: docs/ARCADE_COLLISION_BC8C_RETRY_LIVE_2026-10-21.md.
+- **Fixed master BE0D–BE67 collision geometry shift FULLY recovered as a
+  bounded numerical routine.** Original E98D/E731 difference moves
+  E72D/E72F/E733/E72B; original E98F/E73B difference moves
+  E737/E739/E73D/E735. Each delta is 16-bit wrapping, with a zero
+  branch; returns to original retry at BCA5. **100,000 original Z80
+  opcode/state comparisons, zero mismatches**, balanced 25k cases for
+  each two-axis branch combination. **22 unmodified live MAME calls**
+  from all five original car slots verified original reference/geometry
+  words, zero mismatches (9 X-only, 12 Y-only, one both).
+  Public verifiers: arcade_collision_be0d_translation.py,
+  arcade_live_collision_be0d_translation.py; instrumentation:
+  mame_capture_collision_be0d.lua; Godot stage:
+  ArcadeCollisionTranslation.gd. Evidence:
+  docs/ARCADE_COLLISION_BE0D_TRANSLATION_LIVE_2026-10-21.md.
+- **Original driving motion sign-crossing stage, master 7225–7244**
+  recovered with exact 16-bit Z80 JP M/JP P semantics. 100,000 private
+  original instruction comparisons, zero mismatches across both
+  signs and clamp/keep branches. **3,598 unmodified live MAME E76B
+  output writes, zero mismatches**, including 3,271 positive clamps,
+  325 positive kept values, two negative kept values. Public model:
+  arcade_velocity_sign_gate_7225.py; live audit:
+  arcade_live_velocity_gate_7225.py; MAME tap:
+  mame_capture_velocity_7225.lua; Godot:
+  ArcadeVelocitySignGate.gd. Evidence:
+  docs/ARCADE_DRIVING_7225_SIGN_GATE_LIVE_2026-10-21.md.
+
+**All new helpers are bounded, original-compatible and independent of
+original ROM/art. They do not constitute full car dynamics.** The remaining
+71FF–7224 DE production, complete friction/acceleration, full BCFA
+forces, terrain, AI, upgrades, pit/fuel/turbo, sound, fourteen playable
+circuits and overall frame parity remain OPEN. Original arcade geometry,
+speed, control rules and slow bounded portrait pan remain protected.
+
