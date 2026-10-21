@@ -18,6 +18,8 @@ const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const Correction = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Angular = preload("res://scripts/mechanics/ArcadeDriveAngularUpdate.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
+const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
+const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 
 const E76B: int = 0xE76B
 const E768: int = 0xE768
@@ -195,4 +197,66 @@ static func advance_through_original_angular_update(
         previous["complete"] = false
     else:
         assert(stage["next_pc"] == 0x7315)
+    return previous
+
+
+
+static func advance_through_original_steering_selection(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_b: int,
+        original_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        external_control_table: PackedByteArray) -> Dictionary:
+    ## The verified original CPU path now reaches steering PCs:
+    ## 71C8 -> 72D3 -> 7315 -> either 7530 or 7376/7381 -> 73CD.
+    ##
+    ## Caller supplies the authentic E000-FFFF master working RAM, an
+    ## original car record for the indexed B/C input routines, the
+    ## actual original IX and TWO 0x2000 ROM factor lookups. The
+    ## 256-byte E96D control table is separately supplied; no
+    ## original proprietary ROM/RAM table contents ship in this app.
+    ##
+    ## Original downstream 73CD-752F remains unverified on the
+    ## low-threshold branch: return verified prefix and PC=73CD,
+    ## but NEVER fabricate vehicle position/heading state after it.
+    assert(State.CAR_POINTERS.has(original_ix))
+    assert(external_control_table.size() == 256)
+
+    var previous: Dictionary = advance_through_original_angular_update(
+        master_ram, physical_car, original_b, original_c,
+        original_direct_factor, original_reverse_factor)
+    if not previous["complete"]:
+        previous["steering_7315"] = {}
+        previous["steering_7376"] = {}
+        return previous
+
+    assert(previous["next_pc"] == 0x7315)
+    var first_stage: Dictionary = Steering7315.apply_to_ram(
+        previous["ram"], original_ix)
+    previous["ram"] = first_stage["ram"]
+    previous["steering_7315"] = first_stage
+
+    if first_stage["next_pc"] == 0x7530:
+        previous["steering_7376"] = {}
+        previous["next_pc"] = 0x7530
+        previous["complete"] = true
+        return previous
+
+    assert(first_stage["next_pc"] == 0x7376 or
+           first_stage["next_pc"] == 0x7381)
+    var current_ram: PackedByteArray = previous["ram"]
+    var selector: Dictionary = SteeringLookup.after_verified_7315(
+        first_stage,
+        State.get16(current_ram, 0xE773),
+        State.get8(current_ram, original_ix + 0x70),
+        State.get8(current_ram, original_ix + 0x71),
+        external_control_table)
+    previous["steering_7376"] = selector
+    previous["next_pc"] = selector["next_pc"]
+    previous["complete"] = false
+    previous["verified_prefix_complete"] = true
+    previous["unverified_downstream"] = "original Z80 73CD-752F"
     return previous
