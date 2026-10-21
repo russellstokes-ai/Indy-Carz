@@ -5,7 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from arcade_collision_projection_classification import (
-    START, STOP, TABLE_COUNT, signed8, trig8, xrom_hi_math,
+    START, STOP, TABLE_COUNT, ORIGINAL_CATEGORY_COUNT,
+    lookup_original_indexed_byte, signed8, trig8, xrom_hi_math,
     model, execute_original, verify,
 )
 
@@ -14,6 +15,7 @@ class OriginalContactProjectionTests(unittest.TestCase):
     def test_original_stage_bounds_and_signed_byte_inputs(self):
         self.assertEqual((START, STOP), (0xB6ED, 0xB728))
         self.assertEqual(TABLE_COUNT, 24)
+        self.assertEqual(ORIGINAL_CATEGORY_COUNT, 32)
         self.assertEqual(signed8(255), -1)
         self.assertEqual(signed8(128), -128)
 
@@ -47,6 +49,29 @@ class OriginalContactProjectionTests(unittest.TestCase):
             self.assertIn(destination, ("B728", "B778", "B86C"))
             self.assertTrue(0 <= projected <= 255)
 
+    def test_original_unguarded_32_category_lookup(self):
+        fake = bytearray(0x90000)
+        for category in range(32):
+            fake[0xBC5C + category * 2] = (category * 7) & 255
+        for category in range(32):
+            # Only first 24 entries are a structured table. Indices 24..31
+            # genuinely read adjacent code bytes in the original game.
+            self.assertEqual(
+                lookup_original_indexed_byte(bytes(fake), category),
+                (category * 7) & 255)
+            self.assertEqual(
+                lookup_original_indexed_byte(bytes(fake), category | 0xE0),
+                (category * 7) & 255)
+
+    def test_adjacent_instruction_bytes_take_full_projection_path(self):
+        # This is a synthetic representative adjacent byte, not original
+        # proprietary opcode data. Its bit6/bit7 and event mask matter.
+        for byte in (0x2A, 0xE9, 0x3A, 0x08, 0xE6, 0xD3, 0xDD):
+            mask, value, branch = model(byte, 23, 255, 2)
+            self.assertEqual(mask, byte & 0x33)
+            self.assertTrue(0 <= value <= 255)
+            self.assertIn(branch, ("B728", "B778", "B86C"))
+
     def test_invalid_inputs_and_missing_rom_fail_closed(self):
         for invalid in (-1, 256):
             for inputs in ((invalid, 0, 0, 0), (0, invalid, 0, 0),
@@ -54,7 +79,7 @@ class OriginalContactProjectionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     model(*inputs)
         with self.assertRaises(ValueError):
-            execute_original(bytes(0x90000), bytes(0x40000), 24, 0, 0, 0)
+            execute_original(bytes(0x90000), bytes(0x40000), 256, 0, 0, 0)
         with self.assertRaises(ValueError):
             execute_original(bytes(0x90000), bytes(0x40000), 0, 0, 0, 0)
         with self.assertRaisesRegex(ValueError, "Private original verified master"):
