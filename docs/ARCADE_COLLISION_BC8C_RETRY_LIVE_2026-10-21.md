@@ -58,3 +58,48 @@ User-owned private captures remain outside GitHub. The public reproducible captu
 The original BCFA–BE** calculation and its C5** subroutines, impacts on speed/handling/terrain, full acceleration and steering integration, full AI behaviour, fuel/turbo/pits/upgrades, and original runtime race-state parity remain incomplete. No guessed physics, original circuit geometry changes, track rotation, altered pace or Android APK is introduced.
 
 **Commercial original-engine extraction Gate A remains OPEN.**
+
+
+## Additional controlled live MAME fallback at retry 18
+
+**A new test closes the earlier coverage gap, but only in controlled
+execution.** During natural racing, no retry reached the fallback
+threshold in the 9,000-frame sample; this remains true.
+
+On 21 October, a separate authenticated MAME 0.264 experiment installed a
+single-use debugger breakpoint at original BCA5 and set original E92E
+to **0x11 (17 decimal)**. The original next increment reached
+**0x12 (18 decimal)** and executed C468 plus all eleven saved-word
+restorations. The debugger breakpoint then cleared itself.
+
+Actual master Z80 write taps verified **all 30 resulting byte writes**:
+
+- Three original car-state bytes at IX+41/4D/4C reset to zero
+- Five original shared heading/motion reset bytes
+- Twenty-two bytes across the eleven saved geometry/heading words
+- The source of **every** restored byte was independently read from
+  original RAM at the moment of its write; **zero mismatches**
+- The original retry counter equalled 18 at all 30 captured writes
+
+The original tested car IX was E080. No original ROM bytes or memory
+payloads were copied into public GitHub. Private CSV SHA-256:
+31526a3e4a45aca1ae14f0624f8dba63cd18eb49f1e7622fb1aa0cfd4e233a8b.
+
+Reproduction is **explicit opt-in**, because it edits *emulated RAM*:
+
+    INDY_FORCE_BC8C=1 INDY_BC8C_OUT=local/private-runtime/forced_bc8c.csv \
+      mame indyheat -rompath /PRIVATE/original-rompath \
+      -debug -debugger none -video none -sound none -nothrottle \
+      -seconds_to_run 58 \
+      -autoboot_script tools/mame_probe_bc8c_forced_fallback.lua
+
+The script requires the environment flag; do **not** use it for ordinary
+real-race evidence. The reproducible CSV audit is
+tools/arcade_controlled_collision_fallback_audit.py and its ROM-free
+regression is tests/test_arcade_controlled_collision_fallback_audit.py.
+
+The exact entry and fallback state changes were also ported into
+**scripts/mechanics/ArcadeCollisionRetry.gd**, with original RAM-copy
+semantics and regression tests for all five car slots and byte-counter
+boundaries. Neither this experiment nor the Godot subroutine proves
+complete original BCFA collision forces, tyre grip or terrain effects.
