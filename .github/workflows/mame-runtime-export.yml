@@ -1,0 +1,60 @@
+name: Portable MAME emulator for private arcade validation
+
+on:
+  push:
+    paths:
+      - ".github/workflows/mame-runtime-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-headless-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Install redistributable MAME emulator and dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mame mame-data
+          if [ -x /usr/games/mame ]; then echo "/usr/games" >> "$GITHUB_PATH"; fi
+          /usr/games/mame -version
+          /usr/games/mame -listfull indyheat
+
+      - name: Package emulator executable and shared libraries only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p portable-mame/bin portable-mame/lib
+          cp /usr/games/mame portable-mame/bin/mame
+          # Use ldd only on the trusted distribution-packaged emulator,
+          # and retain all library dependencies. No game ROMs or assets
+          # are present in this workflow or its public artifact.
+          while IFS= read -r lib; do
+            [ -f "$lib" ] || continue
+            case "$lib" in
+              */ld-linux-x86-64.so.2) continue ;;
+            esac
+            cp -Lf "$lib" "portable-mame/lib/$(basename "$lib")"
+          done < <(ldd /usr/games/mame | awk '/=> \/[^ ]+/{print $3} /^\//{print $1}' | sort -u)
+          cat > portable-mame/README.txt <<'END'
+          MAME emulator built from official Ubuntu redistribution packages.
+          No original game ROMs, code, graphics, or user data included.
+          Local usage from this directory:
+            LD_LIBRARY_PATH=./lib ./bin/mame -listfull indyheat
+            LD_LIBRARY_PATH=./lib ./bin/mame indyheat -rompath /PRIVATE/romdir -video none -sound none
+          MAME source/license: https://github.com/mamedev/mame
+          END
+          tar -czf portable-mame-runtime.tar.gz portable-mame
+          ls -lh portable-mame-runtime.tar.gz
+          du -sh portable-mame
+
+      - name: Upload standalone emulator (NO GAME ROM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-mame-runtime
+          path: portable-mame-runtime.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
