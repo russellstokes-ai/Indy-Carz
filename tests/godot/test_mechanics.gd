@@ -15,6 +15,7 @@ const VelocityGate = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd"
 const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
 const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
+const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -43,6 +44,7 @@ func _initialize() -> void:
     _test_original_velocity_sign_gate()
     _test_original_drive_entry_chain()
     _test_original_angular_motion_limit()
+    _test_original_steering_7315()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -679,6 +681,82 @@ func _test_original_angular_motion_limit() -> void:
             "original low-response entry runs 71D9, 7225, 7245 and 726D")
     _verify(non_skipped["motion_correction"]["next_pc"] == 0x72D3,
             "original 726D normal continuation remains instruction-bound")
+
+
+func _test_original_steering_7315() -> void:
+    ## Original full 7315-7375 bounded angular steering state update.
+    ## The original processor has an unusual borrowed carry from 7335
+    ## into 733C: the 0xFBFE indexed field is PASSTHROUGH.
+    var golden: Array = [
+        # E771, E773, input IX+4C word, angular E767,
+        # original branch name, resulting car word, resulting E767
+        [0x0100, 0x0200, 0x0402, 0xEFAB, "passthrough", 0x0380, 0xF32B],
+        [0x0100, 0x0200, 0x0403, 0xEFAB, "positive_clamp", 0x0380, 0xF32B],
+        [0x0100, 0x0200, 0x7FFF, 0xEFAB, "positive_clamp", 0x0380, 0xF32B],
+        [0x0100, 0x0200, 0x8000, 0xEFAB, "negative_clamp", 0xFC80, 0xEC2B],
+        [0x0100, 0x0200, 0xFBFD, 0xEFAB, "negative_clamp", 0xFC80, 0xEC2B],
+        [0x0100, 0x0200, 0xFBFE, 0xEFAB, "passthrough", 0xFC7E, 0xEC29],
+        [0x0100, 0x0200, 0xFBFF, 0xEFAB, "passthrough", 0xFC7E, 0xEC29],
+        [0x0100, 0x0200, 0x0000, 0xEFAB, "passthrough", 0, 0xEFAB]
+    ]
+    for fields in golden:
+        var actual: Dictionary = Steering7315.calculate(
+            fields[0], fields[1], fields[2], fields[3], 0x7F)
+        _verify(actual["branch"] == fields[4] and
+                actual["car4c4d"] == fields[5] and
+                actual["e767"] == fields[6] and
+                actual["next_pc"] == 0x7530,
+                "original 7315 Z80 angular clamp/lookup/16-bit heading parity")
+        _verify(actual["addresses"].size() == 2,
+                "original 7315 uses two signed-XROM slot0 lookups")
+
+    var first_shortcut: Dictionary = Steering7315.calculate(
+        0xFF, 0x0100, 0x4567, 0x789A, 0xB3)
+    _verify(first_shortcut["next_pc"] == 0x7376 and
+            first_shortcut["car4c4d"] == 0x4567 and
+            first_shortcut["e767"] == 0x789A,
+            "original 7315 low E771 redirects to 7376 with no writes")
+    var second_shortcut: Dictionary = Steering7315.calculate(
+        0x0100, 0xFF, 0x4567, 0x789A, 0xB3)
+    _verify(second_shortcut["next_pc"] == 0x7381 and
+            second_shortcut["a"] == 0xB3,
+            "original 7315 low E773 redirects to 7381 with IX+71 in A")
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(0x2000)
+        ram.fill(0x75)
+        CollisionRetry._set16(ram, 0xE771, 0x0100)
+        CollisionRetry._set16(ram, 0xE773, 0x0200)
+        CollisionRetry._set16(ram, 0xE767, 0xEFAB)
+        CollisionRetry._set16(ram, ix + 0x4C, 0xFBFE)
+        ram[ix + 0x71 - 0xE000] = 0xB3
+        ram[0xE600 - 0xE000] = 0xC7
+
+        var after: Dictionary = Steering7315.apply_to_ram(ram, ix)
+        _verify(after["complete"] and after["next_pc"] == 0x7530 and
+                after["branch"] == "passthrough",
+                "original complete steering stage enters 7530 from any car")
+        _verify(CollisionRetry.get16(after["ram"], ix + 0x4C) == 0xFC7E and
+                CollisionRetry.get16(after["ram"], 0xE767) == 0xEC29,
+                "original Z80 IX+4C physical state and shared angle updated")
+        _verify(CollisionRetry.get16(ram, ix + 0x4C) == 0xFBFE and
+                CollisionRetry.get16(ram, 0xE767) == 0xEFAB,
+                "pure original steering port never mutates caller RAM")
+        _verify(after["ram"][0xE600 - 0xE000] == 0xC7,
+                "original bounded stage leaves other game RAM unchanged")
+
+        CollisionRetry._set16(ram, 0xE771, 0xFF)
+        var bypass: Dictionary = Steering7315.apply_to_ram(ram, ix)
+        _verify(not bypass["complete"] and bypass["next_pc"] == 0x7376 and
+                bypass["ram"] == ram,
+                "original low-threshold steering branch remains unresolved and immutable")
+        CollisionRetry._set16(ram, 0xE771, 0x0100)
+        CollisionRetry._set16(ram, 0xE773, 0xFF)
+        var alternate: Dictionary = Steering7315.apply_to_ram(ram, ix)
+        _verify(not alternate["complete"] and alternate["next_pc"] == 0x7381 and
+                alternate["a"] == 0xB3 and alternate["ram"] == ram,
+                "original second threshold preserves IX+71 and unchanged RAM")
 
 
 func _test_portrait_camera() -> void:
