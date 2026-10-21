@@ -8,6 +8,7 @@ const Wheel = preload("res://scripts/mechanics/ArcadeWheelInput.gd")
 const Steering = preload("res://scripts/mechanics/ArcadeSteeringState.gd")
 const Pedal = preload("res://scripts/mechanics/ArcadePedalInput.gd")
 const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
+const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -30,6 +31,7 @@ func _initialize() -> void:
     _test_exhaustive_input_arithmetic()
     _test_original_drive_byte_stages()
     _test_original_car_state_bridge()
+    _test_original_live_motion_geometry()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -180,6 +182,80 @@ func _test_original_car_state_bridge() -> void:
     copy[Car.FIELD_PEDAL_RESPONSE] = 0
     _verify(record.read_u8(Car.FIELD_PEDAL_RESPONSE) == 0x7E,
             "debug snapshots cannot mutate original live record")
+
+
+
+func _test_original_live_motion_geometry() -> void:
+    # Independent golden hash for original 256 sine + cosine samples, rebuilt
+    # mathematically without original game-table bytes in this repository.
+    var samples: PackedByteArray = PackedByteArray()
+    for is_sine in [false, true]:
+        for angle in range(256):
+            samples.append(Motion._trig8(angle, is_sine) & 255)
+    var hash_context: HashingContext = HashingContext.new()
+    hash_context.start(HashingContext.HASH_SHA256)
+    hash_context.update(samples)
+    var sample_digest: String = hash_context.finish().hex_encode()
+    _verify(sample_digest == "8a9cef6191018fefbc88bfaae6acb6faabfee0b9e4ea104e21c0c75286b5b895",
+            "all 512 original trigonometric outputs match independent maths")
+
+    var center: Dictionary = Motion.integrate_center(64, 64, 5, 65535)
+    _verify(center["x"] == 259 and center["y"] == 65535,
+            "original clockwise 16-bit movement wraps exactly")
+    _verify(center["dx"] == 254 and center["dy"] == 0,
+            "original 8-bit signed X-ROM multiply and axis rounding")
+
+    var reversed: Dictionary = Motion.integrate_center(192, 128, 0, 0)
+    _verify(reversed["dx"] == 512 and reversed["dy"] == 0,
+            "original signed multiplication saturates before the fourfold shift")
+
+    var record: ArcadeCarRecord = Car.new()
+    record.write_u8(0x0A, 5)
+    record.write_u8(0x0B, 0)
+    record.write_u8(0x00, 255)
+    record.write_u8(0x01, 255)
+    record.write_u8(Motion.CAR_MOTION_HEADING, 64)
+    record.write_u8(Motion.CAR_SIGNED_MOTION, 64)
+    record.write_u8(Motion.CAR_GEOMETRY_HEADING, 0)
+    record.write_u8(0x80, 0xAB) # untouched auxiliary state
+
+    var updated: Dictionary = Motion.apply_verified_stages(record, true)
+    _verify(updated["integrated"] and updated["x"] == 259 and updated["y"] == 65535,
+            "verified centre state stored into original 256-byte car record")
+    var footprint: Dictionary = updated["footprint"]
+    _verify(footprint[Motion.CORNER_X_1] == 5 and
+            footprint[Motion.CORNER_X_2] == 513 and
+            footprint[Motion.CORNER_X_3] == 513 and
+            footprint[Motion.CORNER_X_4] == 5,
+            "original four rotated vehicle X corners at heading zero")
+    _verify(footprint[Motion.CORNER_Y_1] == 380 and
+            footprint[Motion.CORNER_Y_2] == 65154 and
+            footprint[Motion.CORNER_Y_3] == 380 and
+            footprint[Motion.CORNER_Y_4] == 65154,
+            "original vehicle Y corners and 16-bit wrap")
+    _verify(record.read_u8(0x80) == 0xAB,
+            "original unrelated car state unchanged by geometry helper")
+
+    # Live MAME tracing also proved that 920 geometry-only events were valid
+    # original branches: a caller must choose whether to integrate.
+    var no_motion: Dictionary = Motion.apply_verified_stages(record, false)
+    _verify(not no_motion["integrated"] and
+            no_motion["x"] == 259 and no_motion["y"] == 65535,
+            "geometry-only update never fabricates a movement step")
+
+    # Angle/byte domains are exhaustive, with original signed saturation,
+    # modulo-16-bit coordinates and no floating-point car velocity update.
+    for angle in range(256):
+        for motion_byte in [0, 1, 64, 127, 128, 192, 255]:
+            var original: Dictionary = Motion.integrate_center(
+                angle, motion_byte, 0xFFFA, 0x0005)
+            var expected_x: int = (0xFFFA + Motion._axis_step(
+                Motion._trig8(angle, true), motion_byte)) & 65535
+            var expected_y: int = (5 + Motion._axis_step(
+                Motion._trig8(angle, false), motion_byte)) & 65535
+            _verify(original["x"] == expected_x and original["y"] == expected_y,
+                    "original driving component numerical parity, angle=%d motion=%d" %
+                    [angle, motion_byte])
 
 
 func _test_portrait_camera() -> void:
