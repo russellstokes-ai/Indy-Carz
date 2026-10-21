@@ -42,7 +42,7 @@ This recovers the original linked-counter preamble and initial global/car adjust
 The previously unresolved original fixed-master **1190** target (reached along some original AI/race setup paths) contains two **far calls via fixed trampoline 14C1**. Original bytecode and bank-switching context confirm the calls, in this order:
 
 1. **Bank 4, CPU address 20A8** — the newly recovered bounded racer-pointer selection stage.
-2. **Bank 4, CPU address 2000** — a separate initializer whose complete effects are **not** recovered by this tool.
+2. **Bank 4, CPU address 2000** — separately recovered after this first-callee investigation; its bounded five-car and course-parameter behaviour is documented in **ARCADE_BANK4_RACE_INITIALIZER_2026-10-21.md**. Full downstream effects still remain open.
 
 The first stage, **20A8–213E**, has an independently reconstructed model and strict interpreter of the authentic original bank-4 Z80 instructions:
 
@@ -50,7 +50,7 @@ The first stage, **20A8–213E**, has an independently reconstructed model and s
 - If E602 is nonzero, search five original linked car pointers from **E634, E632, E630, E62E, E62C** (fifth to first). Select the first whose original **IY+7E bit 6** is set; otherwise default to the first pointer. Original B receives that car's **IY+69 ordinal**. If E602 is zero, original B is the **FF sentinel**.
 - Scan original pointers from **E62C** through **E634**, testing **IX+31 bit 0** and decrementing the original E63E byte where clear. The original **JP M** after DEC A selects when the **8-bit sign flag** becomes set.
 - Compare original B with the selected IX car's **IX+69 ordinal** using **CP / JP M**, NOT a carry-based unsigned comparison. Depending on the original sign flag, either preserve IX and original E674 as C, or replace IX with the chosen IY pointer and set C=04.
-- The bounded interpretation stops **before original CALL 22BA at 213F**. Neither 22BA's metric, the subsequent bank-4 2000 initializer nor original in-race AI actions are inferred.
+- This first-callee interpretation stops **before original CALL 22BA at 213F**. The second bank-4 2000 initializer is now separately opcode-verified to its return; neither 22BA nor complete in-race AI decisions are yet recovered.
 
 **Private genuine Z80 parity:** **50,000** cases, comparing original global exits and final IX/IY, A/B/C and pointer swap; **zero mismatches**. Branch coverage: **42,643** cases reached 213F, **2,942** returned at 20AC, **2,477** returned at 20B2, **1,938** returned at 20B7. All cases used permutations of original five ordinal bytes **0,1,2,3,4** and controlled car status bytes, not an invented 256-entry racer population.
 
@@ -71,9 +71,14 @@ Three new public recovery/verifier modules, three ROM-free regression suites (28
 
 ## Remaining whole-game blockers
 
-- Original startup calls after **3208**, original **1190 second farcall bank4 2000**, subsequent **22BA** car metric and downstream selection.
+- Original startup calls after **3208**, the downstream caller effects of the now-verified second bank-4 2000 initializer, original **22BA** metric and downstream selection.
 - Original complete vehicle steering and handling, AI navigation/opponents, actual collisions/terrain, all fourteen dynamic circuit QRAM/collision masks, lap/pit gates, service/fuel/turbo/upgrades and championship presentation.
 - Original Intel 80186 sound effects/commands and real multi-CPU/video timing.
 - The working MAME debugger remains unavailable in this container: actual original race-phase RAM/video/CPU traces and per-circuit game-state verification cannot yet be claimed.
 
 **Approved baseline protected:** original arcade track shapes/proportions, unchanged original racing mechanics and pace, portrait mobile camera with slow smooth bounded panning. **No guessed replacement game or Android APK. Gate A remains OPEN.**
+
+
+## Follow-on original bank-4 recovery
+
+The second fixed 1190 far call to bank4 2000–208B has now been independently recovered as a five-car status reset and fourteen-course control-parameter setup. It matched **95,536** additional actual original-Z80 instruction cases with **zero mismatches**; results and limitations are in **docs/ARCADE_BANK4_RACE_INITIALIZER_2026-10-21.md**. Critically, the original fixed 1190 order is 20A8 **before** 2000, so newly written E602 from 2000 does not retroactively affect 20A8's earlier choice in that call sequence. Full game Gate A remains OPEN.
