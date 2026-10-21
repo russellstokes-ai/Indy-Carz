@@ -371,3 +371,19 @@ Following first bank4 20A8 original selection, the second fixed 1190 farcall ent
 - Public tools: tools/arcade_bank4_race_init_2000.py (strict original ROM-gated verifier), tests/test_arcade_bank4_race_init_2000.py (11 ROM-free tests); technical evidence **docs/ARCADE_BANK4_RACE_INITIALIZER_2026-10-21.md**. SHA-256 pins both original code segments, original 208C helper, original fixed 1783/1744 helpers and course control tables.
 - **95,536 further original Z80 instruction/model comparisons with zero mismatches**, in addition to the first 149,632 verified cases on 21 October. Original ROM/graphics/audio/assembler private; Godot baseline and circuit geometry untouched. The still-opaque original CALL 22BA at 213F and later physics, AI steering, trackmaps, sound and race systems remain OPEN. **Full game commercial Gate A remains OPEN**.
 
+
+## 21 October — full original bank4 22BA numeric/X-ROM metric recovered
+
+This closes the previously opaque original original bank-4 **CALL 22BA** numerical dependency reached from the recovered 20A8–213E car-pointer selection.
+
+- Original bank4 **22BA–2304**, 75 bytes, source SHA-256 3a2d4fc9529375ad9b0c0b847228e936b88edb5655c78ed47d542b380127a6ec. Original D/E are car IX+02/IX+04, divider B is course-derived E638 (verified original 2 or 4), with E639, car IX+3A and E623 controlling the bounded result.
+- Original SUB B; INC A unsigned-byte wrap and 16-bit SBC HL,DE either return original DE on carry or compute a capped 8-bit fraction of the positive difference divided by 2 or 4. Original SLA H doubles car+3A **modulo 256**.
+- Two original unsigned-8×8 X-ROM **slot 1 low output** lookups at FFFE implement exact (a*b+128)>>8. Original ADD/RL byte shifts assemble the final **HL=(DE+4×second_lookup)&65535**. The original slot 1 **high** lookup remains a separate open arithmetic question; the current routine uses only low output.
+- Independently compared the separate integer model against actual private original master Z80 opcode execution and authenticated original X-ROM slot1 reads: **100,000 original execution cases, zero mismatches**, including **38,608 early returns** and **61,392 two-lookup computations**, with 58,113 capped fractions and 3,279 smaller fractions. Checked original X-ROM slot1 low byte for **all 65,536 operand pairs**, zero mismatches.
+- Public exact original-ROM-gated numeric checker **tools/arcade_bank4_metric_22ba.py**, ROM-free regression **tests/test_arcade_bank4_metric_22ba.py** (11 new tests), technical evidence **docs/ARCADE_BANK4_METRIC_22BA_2026-10-21.md**. Original binary/table inputs remain PRIVATE.
+- The full original numeric result is now recovered, **NOT the downstream 213F–22B9 AI control-flow consequences or true racing effects**. Avoid labeling HL as an AI steering force or collision strength without original live state traces.
+
+Combined **21 October** additions: original 2CF9 counter/timer, 31E9 race-start gate, original bank4 20A8 racer selection, original bank4 2000 five-car initializer, and original bank4 22BA numerical routine = **345,168 bounded original opcode input scenarios and zero mismatches**, plus all 65,536 slot1-low X-ROM lookups. Five public source verifiers and five ROM-free regression suites (50 new tests). Counts reflect bounded routine challenges, not unique gameplay paths or fraction of whole game complete.
+
+**Still OPEN**: later 31E6 startup calls, bank4 caller behaviour after 213F, end-to-end car physics/handling, AI routing, all 14 runtime QRAM trackmaps and masks, pit/fuel/turbo/upgrades, real timing/audio, and commercially playable/QA-verified Android game. MAME not available in the local execution environment. No Godot gameplay/camera/circuit changes; approved original layout, pace and bounded portrait panning remain protected. **Gate A OPEN.**
+
