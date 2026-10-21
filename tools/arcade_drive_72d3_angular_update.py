@@ -58,7 +58,7 @@ def independent(master:bytes,car_plus3c:int,change_de:int,e765:int)->dict:
     difference=(e765-doubled2)&65535
     overflow_sub=bool(((e765^doubled2)&(e765^difference))&32768)
     if overflow_sub:difference=0x7FFF if difference&32768 else 0x8000
-    resulting=e765 if False else (difference if difference<32768 else 0)
+    resulting=difference if difference<32768 else 0
     return {"exit":"normal_7315","next_pc":STOP,"e765":resulting,
             "factor":factor,"projection":projected,"delta":doubled2,
             "overflow_sub":overflow_sub}
