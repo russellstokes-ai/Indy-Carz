@@ -86,7 +86,7 @@ class OriginalAngular72D3Tests(unittest.TestCase):
             with self.assertRaises(ValueError):independent(synthetic(),*args)
         with self.assertRaises(ValueError):
             original_z80(bytes(5),bytes(6),42,0,0)
-        with self.assertRaisesRegex(ValueError,"authenticated original private master"):
+        with self.assertRaisesRegex(ValueError,"[Aa]uthenticated original private master"):
             verify(bytes(0x90000),bytes(0x40000),0)
 
 if __name__=="__main__":unittest.main()
