@@ -14,6 +14,7 @@ const CollisionTranslation = preload("res://scripts/mechanics/ArcadeCollisionTra
 const VelocityGate = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd")
 const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
+const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -41,6 +42,7 @@ func _initialize() -> void:
     _test_verified_collision_translation()
     _test_original_velocity_sign_gate()
     _test_original_drive_entry_chain()
+    _test_original_angular_motion_limit()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -588,6 +590,95 @@ func _test_original_drive_entry_chain() -> void:
     _verify(car.read_u8(Car.FIELD_PEDAL_RESPONSE) == 15 and
             car.read_u8(0x57) == 0xAB,
             "connected original stage must not mutate source car record")
+
+
+func _test_original_angular_motion_limit() -> void:
+    # Original 726D..72D2 with its two different signed overflow helpers.
+    # These fixed golden outputs came from an independent CPU interpretation
+    # of actual original Z80/X-ROM, with SYNTHETIC factor inputs rather
+    # than original proprietary 0x2000 lookup-table bytes.
+    var golden: Array = [
+        # B, factor, E765, E933, E76B, final motion, projected, delta
+        [0, 127, 0, 0, 0, 0, 0, 0],
+        [99, 56, 65535, 1, 0, 65534, 65534, 65534],
+        [25, 127, 0x4000, 0x8000, 0x4000, 16784, 16256, 400],
+        [127, 127, 0x7FFF, 0, 0x7FFF, 32767, 32510, 2032],
+        [64, 128, 0x8000, 0x7FFF, 0x8000, 32768, 32767, 0],
+        [255, 0, 0x8000, 0x7FFF, 0xFFFF, 61455, 0, 61456]
+    ]
+    for v in golden:
+        var b: int = v[0]
+        var factor: int = v[1]
+        var angular: int = v[2]
+        var projection: int = v[3]
+        var prior_motion: int = v[4]
+        var result: Dictionary = AngularCorrection.calculate(
+            b, factor, angular, projection, prior_motion)
+        _verify(result["e76b"] == v[5] and
+                result["projected"] == v[6] and
+                result["change"] == v[7] and
+                result["next_pc"] == 0x72D3,
+                "original 726D angular damping/limit/overflow golden Z80 values")
+
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(0x2000)
+        ram.fill(0x6B)
+        CollisionRetry._set16(ram, 0xE765, angular)
+        CollisionRetry._set16(ram, 0xE933, projection)
+        CollisionRetry._set16(ram, 0xE76B, prior_motion)
+        var before: PackedByteArray = ram.duplicate()
+        var changed: Dictionary = AngularCorrection.apply_to_ram(ram,b,factor)
+        _verify(CollisionRetry.get16(changed["ram"],0xE76B) == v[5] and
+                CollisionRetry.get16(changed["ram"],0xE765) == angular and
+                CollisionRetry.get16(changed["ram"],0xE933) == projection,
+                "original 726D RAM stores only new motion and retains source geometry")
+        _verify(ram == before,
+                "original 726D pure CPU state helper leaves supplied RAM unchanged")
+
+    var first_overflow: Dictionary = AngularCorrection.calculate(
+        25,127,0x4000,0x8000,0x4000)
+    _verify(first_overflow["first_overflow"] and
+            first_overflow["difference"] == 0x7FFF,
+            "original 0B76 always forces first-stage positive 7FFF")
+
+    var second_overflow: Dictionary = AngularCorrection.calculate(
+        127,127,0x7FFF,0,0x7FFF)
+    _verify(second_overflow["second_overflow"] and
+            second_overflow["e76b"] == 0x7FFF,
+            "original 0B6B chooses positive 7FFF for signed final overflow")
+
+    # A direct 71C8 high-response/C-zero branch skips 71FA–726C,
+    # but MUST STILL run 726D. All 16-bit state inputs are consistent.
+    var master: PackedByteArray = PackedByteArray()
+    master.resize(0x2000)
+    master.fill(0)
+    CollisionRetry._set16(master,0xE765,0x4000)
+    CollisionRetry._set16(master,0xE933,0x8000)
+    CollisionRetry._set16(master,0xE76B,0x4000)
+    var car: ArcadeCarRecord = Car.new()
+    car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+    car.write_u8(0x75,0x7F)
+    var complete: Dictionary = MotionChain.advance_through_original_motion_correction(
+        master,car,25,0,127)
+    _verify(complete["complete"] and
+            complete["motion_update_skipped"] and
+            complete["next_pc"] == 0x72D3,
+            "original direct entry skip still executes verified 726D motion limits")
+    _verify(CollisionRetry.get16(complete["ram"],0xE76B) == 16784 and
+            CollisionRetry.get16(complete["ram"],0xE933) == 0x8000,
+            "connected original 71C8->726D bypass uses exact 726D result")
+    _verify(CollisionRetry.get16(master,0xE76B) == 0x4000,
+            "connected original physics does not mutate caller input state")
+
+    # Other gate branch still connects into full calculated motion chain.
+    car.write_u8(Car.FIELD_PEDAL_RESPONSE,15)
+    var non_skipped: Dictionary = MotionChain.advance_through_original_motion_correction(
+        master,car,25,0,127)
+    _verify(non_skipped["next_pc"] == 0x72D3 and
+            not non_skipped["motion_update_skipped"],
+            "original low-response entry runs 71D9, 7225, 7245 and 726D")
+    _verify(non_skipped["motion_correction"]["next_pc"] == 0x72D3,
+            "original 726D normal continuation remains instruction-bound")
 
 
 func _test_portrait_camera() -> void:
