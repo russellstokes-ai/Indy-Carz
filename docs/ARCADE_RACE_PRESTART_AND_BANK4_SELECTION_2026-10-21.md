@@ -50,7 +50,7 @@ The first stage, **20A8–213E**, has an independently reconstructed model and s
 - If E602 is nonzero, search five original linked car pointers from **E634, E632, E630, E62E, E62C** (fifth to first). Select the first whose original **IY+7E bit 6** is set; otherwise default to the first pointer. Original B receives that car's **IY+69 ordinal**. If E602 is zero, original B is the **FF sentinel**.
 - Scan original pointers from **E62C** through **E634**, testing **IX+31 bit 0** and decrementing the original E63E byte where clear. The original **JP M** after DEC A selects when the **8-bit sign flag** becomes set.
 - Compare original B with the selected IX car's **IX+69 ordinal** using **CP / JP M**, NOT a carry-based unsigned comparison. Depending on the original sign flag, either preserve IX and original E674 as C, or replace IX with the chosen IY pointer and set C=04.
-- This first-callee interpretation stops **before original CALL 22BA at 213F**. The second bank-4 2000 initializer is now separately opcode-verified to its return; neither 22BA nor complete in-race AI decisions are yet recovered.
+- This first-callee selection stage stops **before original CALL 22BA at 213F**. Its full bounded numerical result has now been separately opcode-verified (docs/ARCADE_BANK4_METRIC_22BA_2026-10-21.md), and the second bank-4 2000 initializer is also verified. Full downstream in-race AI decisions remain open.
 
 **Private genuine Z80 parity:** **50,000** cases, comparing original global exits and final IX/IY, A/B/C and pointer swap; **zero mismatches**. Branch coverage: **42,643** cases reached 213F, **2,942** returned at 20AC, **2,477** returned at 20B2, **1,938** returned at 20B7. All cases used permutations of original five ordinal bytes **0,1,2,3,4** and controlled car status bytes, not an invented 256-entry racer population.
 
@@ -71,7 +71,7 @@ Three new public recovery/verifier modules, three ROM-free regression suites (28
 
 ## Remaining whole-game blockers
 
-- Original startup calls after **3208**, the downstream caller effects of the now-verified second bank-4 2000 initializer, original **22BA** metric and downstream selection.
+- Original startup calls after **3208**, the downstream caller effects of the now-verified second bank-4 2000 initializer, and the post-22BA selection/control flow (despite the original 22BA numeric routine now being independently recovered).
 - Original complete vehicle steering and handling, AI navigation/opponents, actual collisions/terrain, all fourteen dynamic circuit QRAM/collision masks, lap/pit gates, service/fuel/turbo/upgrades and championship presentation.
 - Original Intel 80186 sound effects/commands and real multi-CPU/video timing.
 - The working MAME debugger remains unavailable in this container: actual original race-phase RAM/video/CPU traces and per-circuit game-state verification cannot yet be claimed.
