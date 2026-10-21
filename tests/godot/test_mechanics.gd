@@ -16,6 +16,7 @@ const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
 const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
+const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -45,6 +46,7 @@ func _initialize() -> void:
     _test_original_drive_entry_chain()
     _test_original_angular_motion_limit()
     _test_original_steering_7315()
+    _test_original_steering_7376_lookup()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -757,6 +759,75 @@ func _test_original_steering_7315() -> void:
         _verify(not alternate["complete"] and alternate["next_pc"] == 0x7381 and
                 alternate["a"] == 0xB3 and alternate["ram"] == ram,
                 "original second threshold preserves IX+71 and unchanged RAM")
+
+
+func _test_original_steering_7376_lookup() -> void:
+    # Synthetic table only; no original-game proprietary bytes embedded.
+    # The Z80 DOES NOT index all 512 candidate bytes: the 8-bit doubling
+    # wraps, making the 128 upper indices aliases for the lower indices.
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+
+    var e773_exact: Dictionary = SteeringLookup.calculate(
+        0x7376, 0x0100, 130, 2, table)
+    var e773_after: Dictionary = SteeringLookup.calculate(
+        0x7376, 0x0101, 130, 2, table)
+    _verify(e773_exact["next_pc"] == 0x73CD and
+            e773_exact["branch"] == "blended_indices" and
+            e773_after["branch"] == "halved_car70",
+            "original 7376 inherited Z80 carry distinguishes E773 0100 from 0101")
+    _verify(e773_exact["b"] == table[4] and
+            e773_after["b"] == (table[4] >> 1),
+            "original doubled-byte alias and halved branch result")
+
+    var direct71: Dictionary = SteeringLookup.calculate(
+        0x7381, 0x0000, 7, 21, table)
+    _verify(direct71["branch"] == "halved_car71" and
+            direct71["b"] == (table[42] >> 1) and
+            direct71["c"] == (table[43] >> 1),
+            "original direct 7381 selects IX+71 and halves each byte")
+
+    var identical: Dictionary = SteeringLookup.calculate(
+        0x7394, 0x0000, 27, 27, table)
+    _verify(identical["branch"] == "same_index_full" and
+            identical["b"] == table[54] and identical["c"] == table[55],
+            "original identical steer-control indices preserve full table pair")
+
+    for car70 in [0, 1, 7, 29, 100, 127]:
+        for car71 in [0, 1, 8, 37, 127, 255]:
+            var blended: Dictionary = SteeringLookup.calculate(
+                0x7394, 0, car70, car71, table)
+            var first_pair: int = (car70 * 2) & 255
+            var second_pair: int = (car71 * 2) & 255
+            var expected_b: int = (
+                table[first_pair] + table[second_pair]) >> 1
+            var expected_c: int = (
+                table[first_pair + 1] + table[second_pair + 1]) >> 1
+            if car70 == car71:
+                expected_b = table[first_pair]
+                expected_c = table[first_pair + 1]
+            _verify(blended["b"] == expected_b and
+                    blended["c"] == expected_c and
+                    blended["next_pc"] == 0x73CD,
+                    "original Z80 RRA with add carry correctly averages two byte pairs")
+
+    # Full original index domain, including aliasing pairs.
+    for index in range(128):
+        var selected_low: Dictionary = SteeringLookup.calculate(
+            0x7381, 0, 0, index, table)
+        var selected_high: Dictionary = SteeringLookup.calculate(
+            0x7381, 0, 0, index + 128, table)
+        _verify(selected_low["b"] == selected_high["b"] and
+                selected_low["c"] == selected_high["c"],
+                "original steering two-times-index byte wrap at 128")
+    var first_stage: Dictionary = Steering7315.calculate(
+        0xFF, 0x100, 0x1234, 0xFABC, 22)
+    var composed: Dictionary = SteeringLookup.after_verified_7315(
+        first_stage, 0x100, 7, 21, table)
+    _verify(composed["next_pc"] == 0x73CD and
+            composed["branch"] == "blended_indices",
+            "original 7315 early exit enters recovered 7376 lookup stage")
 
 
 func _test_portrait_camera() -> void:
