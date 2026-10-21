@@ -12,6 +12,8 @@ const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
 const CollisionRetry = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
 const CollisionTranslation = preload("res://scripts/mechanics/ArcadeCollisionTranslation.gd")
 const VelocityGate = preload("res://scripts/mechanics/ArcadeVelocitySignGate.gd")
+const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
+const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -38,6 +40,7 @@ func _initialize() -> void:
     _test_verified_collision_retry()
     _test_verified_collision_translation()
     _test_original_velocity_sign_gate()
+    _test_original_drive_entry_chain()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -500,6 +503,91 @@ func _test_original_velocity_sign_gate() -> void:
             ) else 0
             _verify(VelocityGate.calculate(prior, displacement)["stored_e76b"] == expected,
                     "original velocity Z80 JP M/JP P 16-bit boundaries")
+
+
+func _test_original_drive_entry_chain() -> void:
+    # Original Z80 71C8–726C: input threshold, unsigned X-ROM
+    # displacement, signed byte motion direction, and C-selected path.
+    # Original B/C are caller-supplied verified table bytes, not guessed.
+    for response in [0, 1, 15, 16, 17, 128, 255]:
+        for b in [0, 1, 127, 255]:
+            for c in [0, 1, 2, 255]:
+                for ix_minus_0b in [0, 1, 127, 255]:
+                    for direction in [0, 127, 128, 255]:
+                        var gate: Dictionary = Entry.calculate(
+                            response, b, c, ix_minus_0b, direction)
+                        if response >= 16:
+                            if c == 0:
+                                _verify(gate["next_pc"] == 0x726D and
+                                        gate["de"] == null,
+                                        "original high-pedal zero-C bypass to 726D")
+                            else:
+                                _verify(gate["next_pc"] == 0x71FF and
+                                        gate["de"] == 0,
+                                        "original high-pedal nonzero-C forces DE=0")
+                        else:
+                            var product: int = ((b * ix_minus_0b) + 128) >> 8
+                            var amount: int = (((product << 1) & 255) << 4) & 65535
+                            if (direction & 128) != 0:
+                                amount = (-amount) & 65535
+                            _verify(gate["de"] == amount,
+                                    "original 71D9 signed 8-bit rounded product, byte double and 16-bit wrap")
+                            _verify(gate["next_pc"] == (0x7225 if c == 0 else 0x71FF),
+                                    "original C-zero skip of 71FA lookup")
+
+    var base_ram: PackedByteArray = PackedByteArray()
+    base_ram.resize(0x2000)
+    base_ram.fill(0)
+    CollisionRetry._set16(base_ram, 0xE76B, 0x3456)
+    CollisionRetry._set16(base_ram, 0xE933, 0x0123)
+    CollisionRetry._set16(base_ram, 0xE769, 0x1200)
+    base_ram[0xE768 - 0xE000] = 35
+    base_ram[0xE76C - 0xE000] = 128
+    base_ram[0xE600 - 0xE000] = 0x5A
+
+    var car: ArcadeCarRecord = Car.new()
+    car.write_u8(0x75, 0xFF)
+    car.write_u8(Car.FIELD_PEDAL_RESPONSE, 16)
+    car.write_u8(0x57, 0xAB)
+
+    var skip_result: Dictionary = MotionChain.advance_from_original_input(
+        base_ram, car, 255, 0)
+    _verify(skip_result["complete"] and skip_result["motion_update_skipped"] and
+            skip_result["next_pc"] == 0x726D,
+            "original 71C8 high-response/C-zero direct shortcut")
+    _verify(skip_result["ram"] == base_ram and
+            CollisionRetry.get16(base_ram, 0xE76B) == 0x3456,
+            "original shortcut changes no motion state")
+    _verify(car.read_u8(0x57) == 0xAB,
+            "original car input mapping protects unrelated physical slot+57")
+
+    # With the same high response but nonzero C, the original does NOT
+    # skip: it sets DE=zero and runs the rest of the 71FA–726C chain.
+    var forced_zero: Dictionary = MotionChain.advance_from_original_input(
+        base_ram, car, 255, 1)
+    _verify(forced_zero["entry"]["de"] == 0 and
+            forced_zero["entry"]["next_pc"] == 0x71FF and
+            not forced_zero["motion_update_skipped"],
+            "original high-response nonzero-C enters actual X-ROM stage with DE=0")
+    _verify(forced_zero["next_pc"] == 0x726D or
+            forced_zero["next_pc"] == 0x1689,
+            "original downstream arithmetic cannot take invented PC")
+
+    car.write_u8(Car.FIELD_PEDAL_RESPONSE, 15)
+    var negative_motion: Dictionary = MotionChain.advance_from_original_input(
+        base_ram, car, 255, 0)
+    _verify(negative_motion["entry"]["next_pc"] == 0x7225 and
+            not negative_motion["motion_update_skipped"],
+            "low-response/C-zero enters original clamp at 7225")
+    _verify(negative_motion["next_pc"] == 0x726D and
+            negative_motion["complete"],
+            "original C-zero branch passes verified 7225 and 7245")
+    _verify(CollisionRetry.get8(negative_motion["ram"], 0xE600) == 0x5A and
+            CollisionRetry.get16(base_ram, 0xE933) == 0x0123,
+            "original connected motion never changes unrelated memory or input RAM")
+    _verify(car.read_u8(Car.FIELD_PEDAL_RESPONSE) == 15 and
+            car.read_u8(0x57) == 0xAB,
+            "connected original stage must not mutate source car record")
 
 
 func _test_portrait_camera() -> void:
