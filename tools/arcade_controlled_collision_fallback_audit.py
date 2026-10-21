@@ -77,7 +77,7 @@ def audit_rows(rows: list[dict[str,str]]) -> dict:
         "original_restored_16bit_words":len(BACKUP_WORDS),
         "original_restored_bytes":2*len(BACKUP_WORDS),
         "original_source_byte_mismatches":0,
-        "original_pc":f"{ORIGINAL_IX:04X}",
+        "original_car_ix":f"{ORIGINAL_IX:04X}",
         "frame":frame_number,
         "limitations":"BCFA full collision forces, natural 18-retry probability and track impact physics remain unknown"
     }
