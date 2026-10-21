@@ -17,6 +17,7 @@ const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.g
 const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
+const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -48,6 +49,7 @@ func _initialize() -> void:
     _test_original_steering_7315()
     _test_original_steering_7376_lookup()
     _test_connected_original_steering_prefix()
+    _test_original_weighted_steering_73cd()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -890,6 +892,56 @@ func _test_connected_original_steering_prefix() -> void:
                 "original low E773 selector correctly enters 7381")
         _verify(second["steering_7376"]["c"] == (lookup[43] >> 1),
                 "original 7381 chooses second index car+71 and returns exact C")
+
+
+func _test_original_weighted_steering_73cd() -> void:
+    # Exact original 73CD: returning -128 NEG saturation and TWO
+    # serial rounded unsigned X-ROM slot1 lookups. We supply synthetic
+    # source factor bytes; no original 65-byte ROM table is embedded.
+    _verify(SteeringWeighted.FACTOR_TABLE_ENTRIES == 65 and
+            SteeringWeighted.FACTOR_TABLE_BASE == 0x7635 and
+            SteeringWeighted.RETURN_PC == 0x73F6,
+            "original 73CD fixed lookup page and verified return PC")
+
+    for motion in range(256):
+        var signed_motion: int = motion if motion < 128 else motion - 256
+        var magnitude: int = mini(127,absi(signed_motion))
+        var expected_index: int = (magnitude + 1) >> 1
+        _verify(SteeringWeighted.original_table_index(motion) == expected_index,
+                "original 73CD 256 motion magnitudes including -128 overflow")
+    _verify(SteeringWeighted.original_table_index(128) == 64 and
+            SteeringWeighted.original_table_index(129) == 64 and
+            SteeringWeighted.original_table_index(127) == 64,
+            "original NEG -128 overflow helper 1C85 returns magnitude 127")
+
+    var saturated: Dictionary = SteeringWeighted.calculate(
+        128,255,255,255)
+    _verify(saturated["neg128_saturated"] and
+            saturated["table_index"] == 64 and
+            saturated["first_low"] == 254 and
+            saturated["weighted"] == 253 and
+            saturated["next_pc"] == 0x73F6,
+            "original 73CD double rounding and returning 1C85 clamp")
+    _verify(saturated["xr_addresses"] == [0xFFFF,0xFFFE],
+            "original second X-ROM address uses first product low byte")
+
+    for motion in [0,1,2,63,64,127,128,129,192,254,255]:
+        for first_operand in [0,1,127,128,255]:
+            for car_factor in [0,1,127,128,255]:
+                var original_factor: int = (motion+first_operand+car_factor) & 255
+                var result: Dictionary = SteeringWeighted.calculate(
+                    motion,first_operand,car_factor,original_factor)
+                var expected_first: int = (
+                    (original_factor*first_operand+128)>>8)
+                var expected_second: int = (
+                    (car_factor*expected_first+128)>>8)
+                _verify(result["first_low"] == expected_first and
+                        result["weighted"] == expected_second,
+                        "original 73CD X-ROM multiplication is rounded twice")
+                _verify(result["xr_addresses"] == [
+                    (original_factor<<8)|first_operand,
+                    (car_factor<<8)|expected_first
+                ],"original 73CD lookup inputs preserve exact byte layout")
 
 
 func _test_portrait_camera() -> void:
