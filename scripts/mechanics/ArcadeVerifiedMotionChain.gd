@@ -21,6 +21,7 @@ const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
+const Control = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
 
 const E76B: int = 0xE76B
 const E768: int = 0xE768
@@ -319,3 +320,49 @@ static func advance_through_original_weighted_steering(
     prior["verified_prefix_complete"] = true
     prior["unverified_downstream"] = "original Z80 73F6-752F"
     return prior
+
+
+
+static func advance_through_original_steering_control(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_b: int,
+        original_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Verified original Z80 driving/steering prefix 71C8–7441.
+    ## The 7315 normal route jumps straight to 7530 and does NOT
+    ## execute 73CD or this control computation.
+    ##
+    ## The alternate 7376 / 7381 paths share this exact 73F6
+    ## angular control stage. No original ROM or proprietary table
+    ## values are stored: caller must provide original-compatible
+    ## selected factor bytes and control table.
+    var previous: Dictionary = advance_through_original_weighted_steering(
+        master_ram, physical_car, original_ix,
+        original_b, original_c, original_direct_factor,
+        original_reverse_factor, control_table_256,
+        original_weighting_factor)
+    previous["steering_control_73f6"] = {}
+    if previous["next_pc"] != 0x73F6:
+        # May already have reached verified 7530 or the truly
+        # nonlocal original 1689; no imaginary extra writes.
+        return previous
+
+    var ram: PackedByteArray = previous["ram"]
+    var control: Dictionary = Control.calculate(
+        State.get16(ram, 0xE789),
+        State.get16(ram, 0xE773),
+        State.get16(ram, 0xE787),
+        State.get16(ram, 0xE771),
+        State.get8(ram, original_ix + 0x79))
+    assert(control["next_pc"] == 0x7442)
+    previous["steering_control_73f6"] = control
+    previous["next_pc"] = control["next_pc"]
+    previous["complete"] = false
+    previous["verified_prefix_complete"] = true
+    previous["unverified_downstream"] = "original Z80 7442-752F"
+    return previous
