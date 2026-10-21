@@ -18,6 +18,7 @@ const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorr
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
+const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -51,6 +52,7 @@ func _initialize() -> void:
     _test_connected_original_steering_prefix()
     _test_original_weighted_steering_73cd()
     _test_connected_original_weighted_steering()
+    _test_original_steering_control_73f6()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -992,6 +994,93 @@ func _test_connected_original_weighted_steering() -> void:
         _verify(normal["complete"] and normal["next_pc"] == 0x7530 and
                 normal["weighted_73cd"].is_empty(),
                 "normal 7315 steering bypass must not execute original 73CD")
+
+
+func _test_original_steering_control_73f6() -> void:
+    # Original 73F6 angular control includes an inherited borrow across
+    # two SBC HL,DE operations and the three returning saturation helpers.
+    var golden: Array = [
+        # Original wrapped word, IX+79 steering sign, angular byte, A output
+        [0x0000,0,0,64],
+        [0x0000,0x80,0,64],
+        [0x0400,0,8,72],
+        [0x0400,0x80,8,56],
+        [0xFC00,0,-8,56],
+        [0xFC00,0x80,-8,72],
+        [0x7FFF,0,127,127],
+        [0x7FFF,0x80,127,32],
+        [0x8000,0,-128,32],
+        [0x8000,0x80,-128,127]
+    ]
+    for item in golden:
+        var result: Dictionary = SteeringControl.calculate(
+            item[0],0,0,0,item[1])
+        _verify(result["wrapped_word"] == item[0] and
+                result["angular_sample"] == item[2] and
+                result["a"] == item[3] and
+                result["next_pc"] == 0x7442,
+                "original 73F6 saturated signed control and steering sign")
+
+    var borrowed: Dictionary = SteeringControl.calculate(
+        0,0xFFFF,0,0x007F,0)
+    _verify(borrowed["borrow_from_first_subtraction"] == 1 and
+            borrowed["wrapped_word"] == 0x007F and
+            borrowed["a"] == 64,
+            "original 73F6 preserves first SBC borrow into second SBC")
+    var changed: Dictionary = SteeringControl.calculate(
+        0,0xFFFF,0,0x0080,0)
+    _verify(changed["wrapped_word"] == 0x0080 and
+            changed["a"] == 65,
+            "original double-SBC borrow changes angular control threshold")
+
+    for first in [0,1,0x7FFF,0x8000,0xFFFF]:
+        for second in [0,1,0x7FFF,0x8000,0xFFFF]:
+            for car_bit in [0,0x80]:
+                var result: Dictionary = SteeringControl.calculate(
+                    first,second,0x1234,0xFEDC,car_bit)
+                _verify(result["a"] >= 32 and result["a"] <= 127,
+                        "original 0B35/0B3E/1C85 control saturation")
+
+    # Connected control stage: genuine original 7315 low-threshold
+    # branches reach 73CD, which generates an A byte for 73F6.
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        var master: PackedByteArray = PackedByteArray()
+        master.resize(0x2000)
+        master.fill(0)
+        CollisionRetry._set16(master,0xE771,0x00FF)
+        CollisionRetry._set16(master,0xE773,0x0200)
+        CollisionRetry._set16(master,0xE789,0x0800)
+        master[ix + 0x70 - 0xE000] = 130
+        master[ix + 0x71 - 0xE000] = 21
+        master[ix - 1 - 0xE000] = 255
+        master[ix + 0x79 - 0xE000] = 0
+        var car: ArcadeCarRecord = Car.new()
+        car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+        var before: PackedByteArray = master.duplicate()
+
+        var result: Dictionary = MotionChain.advance_through_original_steering_control(
+            master,car,ix,0,0,0,0,table,255)
+        _verify(result["verified_prefix_complete"] and
+                not result["complete"] and result["next_pc"] == 0x7442,
+                "connected verified original physics reaches steering PC 7442")
+        _verify(not result["steering_control_73f6"].is_empty() and
+                result["steering_control_73f6"]["a"] >= 32 and
+                result["steering_control_73f6"]["a"] <= 127,
+                "connected steering angular control has original bounded output")
+        _verify(result["unverified_downstream"] == "original Z80 7442-752F",
+                "the original post-7442 steering mechanics remain explicit")
+        _verify(before == master,
+                "connected original steering control preserves caller input")
+
+        CollisionRetry._set16(master,0xE771,0x0100)
+        var normal: Dictionary = MotionChain.advance_through_original_steering_control(
+            master,car,ix,0,0,0,0,table,255)
+        _verify(normal["complete"] and normal["next_pc"] == 0x7530 and
+                normal["steering_control_73f6"].is_empty(),
+                "original 7315 normal route bypasses unneeded steering control")
 
 
 func _test_portrait_camera() -> void:
