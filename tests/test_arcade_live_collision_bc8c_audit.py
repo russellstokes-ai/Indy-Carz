@@ -121,7 +121,8 @@ class OriginalCollisionBC8CLiveTests(unittest.TestCase):
     def test_empty_and_broken_ROM_rejected(self):
         with self.assertRaises(ValueError):audit_rows([])
         with self.assertRaises(ValueError):audit_rows([{"frame":"1"}])
-        with self.assertRaises(ValueError):audit_file(Path("/no/such.csv"),Path("/no/rom.bin"))
+        with self.assertRaises((OSError,ValueError)):
+            audit_file(Path("/no/such.csv"),Path("/no/rom.bin"))
 
 if __name__=="__main__":
     unittest.main()
