@@ -9,6 +9,7 @@ const Steering = preload("res://scripts/mechanics/ArcadeSteeringState.gd")
 const Pedal = preload("res://scripts/mechanics/ArcadePedalInput.gd")
 const Drive = preload("res://scripts/mechanics/ArcadeDriveStages.gd")
 const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
+const CollisionRetry = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -32,6 +33,7 @@ func _initialize() -> void:
     _test_original_drive_byte_stages()
     _test_original_car_state_bridge()
     _test_original_live_motion_geometry()
+    _test_verified_collision_retry()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -284,6 +286,93 @@ func _test_original_live_motion_geometry() -> void:
             _verify(original["x"] == expected_x and original["y"] == expected_y,
                     "original driving component numerical parity, angle=%d motion=%d" %
                     [angle, motion_byte])
+
+
+func _test_verified_collision_retry() -> void:
+    # Exact bounded original BC8C/BCA5/C468 rules only. Never run
+    # speculative physics or synthesize a collision response from these.
+    var initial: PackedByteArray = PackedByteArray()
+    initial.resize(CollisionRetry.LENGTH)
+    initial.fill(0x59)
+    initial[0xE608 - 0xE000] = 0xA5
+    initial[0xE976 - 0xE000] = 0x13
+    initial[0xE977 - 0xE000] = 0xCD
+    initial[0xE92E - 0xE000] = 0xFE
+    initial[0xE92C - 0xE000] = 0xDD
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        initial[ix + 0x31 - 0xE000] = 0xA7
+        var entry: Dictionary = CollisionRetry.begin(initial, ix)
+        var entry_state: PackedByteArray = entry["ram"]
+        _verify(entry["f4"] == 0xB3,
+                "original bank OR E976 low byte, not low-nibble replacement")
+        _verify(entry["next_pc"] == 0xBCFA and entry["counter"] == 1,
+                "original collision first attempt begins at BCFA")
+        _verify(CollisionRetry.get8(entry_state, ix + 0x31) == 0x27,
+                "original collision entry clears only bit 7 at IX+31")
+        _verify(CollisionRetry.get8(entry_state, 0xE92E) == 1 and
+                CollisionRetry.get8(entry_state, 0xE92C) == 0,
+                "original BC9E entry sets first retry and clears second counter")
+        _verify(CollisionRetry.get8(entry_state, 0xE608) == 0xB3,
+                "original master hardware bank shadow is updated")
+        _verify(CollisionRetry.get8(initial, ix + 0x31) == 0xA7 and
+                CollisionRetry.get8(initial, 0xE608) == 0xA5,
+                "original input memory snapshot is never mutated by pure helper")
+
+    var fresh: PackedByteArray = PackedByteArray()
+    fresh.resize(0x2000)
+    fresh.fill(0x7F)
+    fresh[0xE768 - 0xE000] = 0xD6
+    for n in range(CollisionRetry.COPY_PAIRS.size()):
+        var pair: Array = CollisionRetry.COPY_PAIRS[n]
+        var saved_word: int = (0x1234 + 0x0137 * n) & 0xFFFF
+        fresh[pair[0] - 0xE000] = saved_word & 255
+        fresh[pair[0] - 0xE000 + 1] = saved_word >> 8
+        fresh[pair[1] - 0xE000] = 0
+        fresh[pair[1] - 0xE000 + 1] = 0
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        for count in [0, 1, 15, 16, 17, 18, 253, 254, 255]:
+            var trial: PackedByteArray = fresh.duplicate()
+            trial[0xE92E - 0xE000] = count
+            trial[ix + 0x41 - 0xE000] = 0xE4
+            trial[ix + 0x4C - 0xE000] = 0xE5
+            trial[ix + 0x4D - 0xE000] = 0xE6
+            var actual: Dictionary = CollisionRetry.retry(trial, ix)
+            var final_ram: PackedByteArray = actual["ram"]
+            var new_count: int = (count + 1) & 255
+            var fallback: bool = new_count >= 18
+            _verify(actual["counter"] == new_count and
+                    CollisionRetry.get8(final_ram, 0xE92E) == new_count,
+                    "original Z80 retry counter 8-bit wrapping at count=%d" % count)
+            _verify(actual["next_pc"] == (0xBC9E if fallback else 0xBCFA) and
+                    actual["words_restored"] == (11 if fallback else 0),
+                    "original BCFA vs BC9E branch and 11-word restoration at count=%d" % count)
+            _verify(CollisionRetry.get8(trial, 0xE92E) == count,
+                    "caller RAM copy unchanged after retry")
+            if fallback:
+                for pair in CollisionRetry.COPY_PAIRS:
+                    _verify(CollisionRetry.get16(final_ram, pair[1]) ==
+                            CollisionRetry.get16(trial, pair[0]),
+                            "all original eleven geometry/heading backup words are restored")
+                _verify(CollisionRetry.get8(final_ram, 0xE76A) == 0xD6 and
+                        CollisionRetry.get16(final_ram, 0xE76B) == 0xCC00 and
+                        CollisionRetry.get16(final_ram, 0xE765) == 0,
+                        "original C468 heading, velocity and spin state reset")
+                _verify(CollisionRetry.get8(final_ram, ix + 0x41) == 0 and
+                        CollisionRetry.get8(final_ram, ix + 0x4C) == 0 and
+                        CollisionRetry.get8(final_ram, ix + 0x4D) == 0,
+                        "original C468 IX+41/4C/4D fields cleared")
+            else:
+                _verify(CollisionRetry.get8(final_ram, ix + 0x41) == 0xE4 and
+                        CollisionRetry.get8(final_ram, ix + 0x4C) == 0xE5,
+                        "the original continuing branch must not run C468")
+
+    var exhausted: PackedByteArray = fresh.duplicate()
+    exhausted[0xE92E - 0xE000] = 0xFF
+    var wrapped: Dictionary = CollisionRetry.retry(exhausted, 0xE080)
+    _verify(wrapped["next_pc"] == 0xBCFA and wrapped["counter"] == 0,
+            "original Z80 retry FF-to-zero wraps and skips rollback")
 
 
 func _test_portrait_camera() -> void:
