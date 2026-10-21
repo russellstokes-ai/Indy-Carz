@@ -50,6 +50,7 @@ func _initialize() -> void:
     _test_original_steering_7376_lookup()
     _test_connected_original_steering_prefix()
     _test_original_weighted_steering_73cd()
+    _test_connected_original_weighted_steering()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -942,6 +943,55 @@ func _test_original_weighted_steering_73cd() -> void:
                     (original_factor<<8)|first_operand,
                     (car_factor<<8)|expected_first
                 ],"original 73CD lookup inputs preserve exact byte layout")
+
+
+func _test_connected_original_weighted_steering() -> void:
+    # Original steering prefix connected from 71C8 through 73F6.
+    # Actual original B/C and X-ROM factor bytes must be supplied
+    # externally. No ROM-table contents or inferred physics here.
+    var lookup: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        lookup.append((i * 57 + 113) & 255)
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(0x2000)
+        ram.fill(0)
+        CollisionRetry._set16(ram,0xE771,0x00FF)
+        CollisionRetry._set16(ram,0xE773,0x0200)
+        ram[ix + 0x70 - 0xE000] = 130
+        ram[ix + 0x71 - 0xE000] = 21
+        ram[ix - 1 - 0xE000] = 255
+
+        var physical: ArcadeCarRecord = Car.new()
+        physical.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+
+        var old_ram: PackedByteArray = ram.duplicate()
+        var real_prefix: Dictionary = MotionChain.advance_through_original_weighted_steering(
+            ram,physical,ix,0,0,0,0,lookup,255)
+        _verify(not real_prefix["complete"] and
+                real_prefix["verified_prefix_complete"] and
+                real_prefix["next_pc"] == 0x73F6,
+                "original low E771 steering prefix reaches 73F6")
+        var selected: int = lookup[4] >> 1
+        var first: int = ((255 * selected + 128) >> 8)
+        var second: int = ((255 * first + 128) >> 8)
+        _verify(real_prefix["steering_7376"]["b"] == selected and
+                real_prefix["weighted_73cd"]["first_low"] == first and
+                real_prefix["weighted_73cd"]["weighted"] == second,
+                "original selected B feeds two serial rounded XROM multipliers")
+        _verify(real_prefix["unverified_downstream"] == "original Z80 73F6-752F",
+                "original 73F6+ physics is not silently approximated")
+        _verify(ram == old_ram,
+                "original car/physics input buffers are not mutated by prefix")
+
+        CollisionRetry._set16(ram,0xE771,0x0100)
+        CollisionRetry._set16(ram,0xE773,0x0100)
+        var normal: Dictionary = MotionChain.advance_through_original_weighted_steering(
+            ram,physical,ix,0,0,0,0,lookup,255)
+        _verify(normal["complete"] and normal["next_pc"] == 0x7530 and
+                normal["weighted_73cd"].is_empty(),
+                "normal 7315 steering bypass must not execute original 73CD")
 
 
 func _test_portrait_camera() -> void:
