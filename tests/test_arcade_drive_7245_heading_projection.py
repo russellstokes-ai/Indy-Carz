@@ -74,7 +74,7 @@ class Original7245HeadingProjectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):slot0(-1,0)
         with self.assertRaises(ValueError):
             original_z80(bytes(0x90000),bytes(3),0,0,0)
-        with self.assertRaisesRegex(ValueError,"checksum-verified"):
+        with self.assertRaisesRegex(ValueError,"[Cc]hecksum-verified"):
             verify(bytes(0x90000),bytes(0x40000),0)
 
 
