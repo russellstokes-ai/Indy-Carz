@@ -20,7 +20,14 @@ XROM_HASH = "1622d5978ee86aae452ad5289a45ff17785f9a841898a3a33d10c0a35d3ca2cb"
 START, STOP = 0xB6ED, 0xB728
 STAGE_HASH = "26c2518291bc6c7c30213890de48ef122aac164c519e5f90aa9a1fabad0ef215"
 TABLE_BASE, TABLE_COUNT = 0xBC5C, 24
+# Live original MAME found E919 low-five-bit categories 24,25,27 and 30.
+# The genuine Z80 indexed helper has NO guard: categories 24..31 read
+# eight pairs of original ROM bytes following the 24-record table, which
+# are adjacent instruction bytes. It is a real arcade behaviour/quirk.
+# Rejecting indices 24..31 was a reverse-engineering fidelity bug.
+ORIGINAL_CATEGORY_COUNT = 32
 TABLE_SHA = "09b4dbd06e58a99a71a19b963e093603d70403d77370f25f399aea5ed2408c49"
+ORIGINAL_LOOKUP_WINDOW_SHA = "36a264d9f24ae68a3a48c1269af60ba6d13143ee5e2b378730b37debe60dabb5"
 HELPER_LOOKUP_SHA = "4f7f30e081e5e2f5c619823771e06b1f890771c9211435bca09f3bca9c4dd63d"
 HELPER_OVERFLOW_SHA = "f41853782747fdc939c855044f587ca6ee57cc759abae23d038b1d0d554cfa08"
 
@@ -37,6 +44,18 @@ def trig8(angle: int, cosine: bool) -> int:
 def xrom_hi_math(a: int, b: int) -> int:
     product = signed8(a) * signed8(b) * 2
     return (max(-32768, min(32767, product)) >> 8) & 255
+
+
+def lookup_original_indexed_byte(master: bytes, e919: int) -> int:
+    """Model genuine unguarded original Z80 indexed-ROM byte access.
+
+    Only the first 24 records are a structured contact table. The other
+    eight reachable indices read the actual adjacent original CPU ROM
+    instruction bytes. Never invent fallback data or reject them.
+    """
+    if len(master) != 0x90000 or not 0 <= e919 <= 255:
+        raise ValueError("Original master ROM and 8-bit E919 category required")
+    return master[TABLE_BASE + 2 * (e919 & 31)]
 
 
 def model(table_byte: int, iy_state_3d: int, d: int, e: int) -> tuple[int, int, str]:
@@ -67,8 +86,6 @@ def execute_original(master: bytes, xrom: bytes, e919: int,
         raise ValueError("Original master and X-ROM dimensions required")
     if any(not 0 <= x <= 255 for x in (e919, iy_state_3d, d_input, e_input)):
         raise ValueError("Original inputs must be unsigned 8-bit values")
-    if (e919 & 31) >= TABLE_COUNT:
-        raise ValueError("Original 24-entry contact category table exhausted")
 
     a = b = c = h = l = 0
     d, e = d_input, e_input
@@ -127,8 +144,8 @@ def execute_original(master: bytes, xrom: bytes, e919: int,
             pc += 1
         elif op == 0x7E:
             address = (h << 8) | l
-            if not TABLE_BASE <= address < TABLE_BASE + 2*TABLE_COUNT:
-                raise ValueError(f"Unexpected original contact table address {address:04X}")
+            if not TABLE_BASE <= address < TABLE_BASE + 2*ORIGINAL_CATEGORY_COUNT:
+                raise ValueError(f"Unexpected original indexed ROM address {address:04X}")
             a = master[address]
             pc += 1
         elif op == 0xC9:
@@ -260,6 +277,7 @@ def verify(master: bytes, xrom: bytes, cases: int = 100000) -> dict:
         (0x1747, 0x174E, HELPER_LOOKUP_SHA),
         (0x0B3E, 0x0B4A, HELPER_OVERFLOW_SHA),
         (TABLE_BASE, TABLE_BASE+2*TABLE_COUNT, TABLE_SHA),
+        (TABLE_BASE, TABLE_BASE+2*ORIGINAL_CATEGORY_COUNT, ORIGINAL_LOOKUP_WINDOW_SHA),
     ]
     for first, last, expected in signatures:
         if hashlib.sha256(master[first:last]).hexdigest() != expected:
@@ -279,10 +297,15 @@ def verify(master: bytes, xrom: bytes, cases: int = 100000) -> dict:
 
     rng = Random(0xB6ED)
     branches = {"B728": 0, "B778": 0, "B86C": 0}
+    adjacent_rom_case_count = 0
+    source_categories = set()
     for i in range(cases):
-        contact = rng.choice((rng.randrange(TABLE_COUNT),
-                              rng.randrange(TABLE_COUNT) | rng.randrange(8) << 5))
-        source_table_byte = master[TABLE_BASE + 2*(contact & 31)]
+        # Deterministic full 0..31 coverage with all upper E919 bits
+        # exercised. Codes 24..31 are VALID real arcade ROM reads.
+        contact = (i % ORIGINAL_CATEGORY_COUNT) | (rng.randrange(8) << 5)
+        source_categories.add(contact & 31)
+        adjacent_rom_case_count += (contact & 31) >= TABLE_COUNT
+        source_table_byte = lookup_original_indexed_byte(master, contact)
         orientation = rng.randrange(256) if i%4 else (i//4)%256
         d = rng.randrange(256) if i%5 else (i//5)%256
         e = rng.randrange(256) if i%6 else (i//6)%256
@@ -298,11 +321,15 @@ def verify(master: bytes, xrom: bytes, cases: int = 100000) -> dict:
         "cases": cases,
         "mismatches": 0,
         "original_next_pc_branches": branches,
-        "original_contact_category_records": TABLE_COUNT,
+        "original_defined_contact_records": TABLE_COUNT,
+        "original_live_reachable_category_indices": ORIGINAL_CATEGORY_COUNT,
+        "categories_verified": sorted(source_categories),
+        "adjacent_program_byte_lookup_cases": adjacent_rom_case_count,
+        "adjacent_program_byte_indices": list(range(TABLE_COUNT, ORIGINAL_CATEGORY_COUNT)),
         "original_trigonometry_bytes_checked": 512,
         "original_xrom_high_bytes_checked": 65536,
         "original_stage_sha256": STAGE_HASH,
-        "scope": "bounded projected-contact classification only; no complete collision response or gameplay",
+        "scope": "exact original 0..31 ROM lookup, including genuine 24..31 instruction-adjacent reads; projected branch only, not full collision physics",
     }
 
 
