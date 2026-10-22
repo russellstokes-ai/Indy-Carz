@@ -16,6 +16,7 @@ const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
 const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
+const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
@@ -63,6 +64,7 @@ func _initialize() -> void:
     _test_original_steering_7499_74d8()
     _test_original_vehicle_physics_prefix()
     _test_original_scratch_serializer_and_car_state()
+    _test_original_714e_control_selector()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1502,6 +1504,95 @@ func _test_original_scratch_serializer_and_car_state() -> void:
                     "original bounded slot model preserves unrelated working RAM and caller input")
             _verify(complete["physical_slot"] == slot,
                     "original selected IX maps the correct physical racing record")
+
+
+func _test_original_714e_control_selector() -> void:
+    # All source table bytes are synthetic. Actual original ROM/runtime
+    # data are owner-supplied outside the public GitHub project.
+    var fake_table: PackedByteArray = PackedByteArray()
+    fake_table.resize(257)
+    for n in range(257):
+        fake_table[n] = (17 * n + 29) & 255
+
+    var shortcut: Dictionary = DriveBC.select_bc(
+        0x0100, 0x0100, 1, 3, 128, fake_table, 0xAB, 0xCD, 0)
+    _verify(shortcut["next_pc"] == 0x7315 and
+            shortcut["b"] == 0xAB and shortcut["c"] == 0xCD and
+            not shortcut["overridden"],
+            "original 714E shortcut goes directly to steering without table override")
+
+    var inherited_borrow: Dictionary = DriveBC.select_bc(
+        0x0100, 0x0100, 1, 3, 0, fake_table, 0xAB, 0xCD, 1)
+    _verify(inherited_borrow["next_pc"] == 0x71C8 and
+            inherited_borrow["path"] == "rotated_blend",
+            "original 714E inherited carry changes 256 threshold routing")
+
+    var direct: Dictionary = DriveBC.select_bc(
+        0x0110, 0x00FF, 1, 19, 0, fake_table)
+    _verify(direct["path"] == "direct_6f" and
+            direct["b"] == (fake_table[38] >> 1) and
+            direct["c"] == fake_table[39],
+            "original 714E direct branch shifts B but not C")
+
+    for index in range(128):
+        var low: Dictionary = DriveBC.select_bc(
+            0, 0, index, index, 0, fake_table)
+        var high: Dictionary = DriveBC.select_bc(
+            0, 0, index + 128, index + 128, 0, fake_table)
+        _verify(low["b"] == high["b"] and low["c"] == high["c"] and
+                low["path"] == "matching_indices",
+                "original doubled byte selector aliases its upper 128 entries")
+
+    for i in [0, 1, 127, 128, 255]:
+        for j in [0, 1, 127, 128, 255]:
+            var blend: Dictionary = DriveBC.select_bc(
+                0, 0, i, j, 0, fake_table)
+            var ai: int = (2 * i) & 255
+            var aj: int = (2 * j) & 255
+            var wanted_b: int = fake_table[ai]
+            var wanted_c: int = fake_table[ai + 1]
+            if i != j:
+                var sum_b: int = (fake_table[ai] + fake_table[aj]) & 255
+                var sum_c: int = (fake_table[ai + 1] + fake_table[aj + 1]) & 255
+                wanted_b = ((sum_b >> 1) | ((sum_b & 1) << 7)) & 255
+                wanted_c = ((sum_c >> 1) | ((sum_c & 1) << 7)) & 255
+            _verify(blend["b"] == wanted_b and blend["c"] == wanted_c,
+                    "original RRCA of wrapped byte sum, never an integer average")
+
+    var override: Dictionary = DriveBC.select_bc(
+        0, 0, 2, 5, 255, fake_table)
+    _verify(override["overridden"] and
+            override["b"] == fake_table[0] and
+            override["c"] == fake_table[1],
+            "original negative E76C overrides both physics B/C bytes")
+
+    var master: PackedByteArray = PackedByteArray()
+    master.resize(0x2000)
+    master.fill(0)
+    CollisionRetry._set16(master, 0xE76D, 0x0110)
+    CollisionRetry._set16(master, 0xE76F, 0x00FF)
+    var car: ArcadeCarRecord = Car.new()
+    car.write_u8(0xEE, 1)
+    car.write_u8(0xEF, 19)
+    var selected: Dictionary = DriveBC.select_from_original_state(
+        master, car, fake_table)
+    _verify(selected["b"] == direct["b"] and
+            selected["c"] == direct["c"] and
+            selected["next_pc"] == 0x71C8,
+            "physical slot+EE/+EF map to original Z80 IX+6E/+6F")
+
+    CollisionRetry._set16(master, 0xE76D, 0x0100)
+    CollisionRetry._set16(master, 0xE76F, 0x0100)
+    var steer_table: PackedByteArray = PackedByteArray()
+    steer_table.resize(256)
+    steer_table.fill(0)
+    var result: Dictionary = MotionChain.advance_using_verified_714e_selector(
+        master, car, 0xE080, fake_table, 0,
+        0xAB, 0xCD, 127, 127, steer_table, 127)
+    _verify(result["original_714e_bypass"] and
+            result["next_pc"] == 0x7315 and not result["complete"] and
+            result["ram"] == master,
+            "original bypass must preserve input master RAM and skip motion updates")
 
 
 func _test_portrait_camera() -> void:
