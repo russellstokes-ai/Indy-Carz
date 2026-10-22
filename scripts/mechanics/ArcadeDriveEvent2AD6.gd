@@ -4,11 +4,12 @@ extends RefCounted
 ## Original bank0 Z80 2AD6–2B76: stage four event words in E900–E907.
 ## The original ROM table is NOT bundled. Caller may provide 512 bytes
 ## corresponding to the original mapped 3F00–40FF memory view. Bytes
-## at 4000+ may depend on the active ROM bank. Missing data stops at the
+## throughout 3F00..40FF depend on the active F4 ROM bank. Missing data stops at the
 ## first genuine LDI; completed staging stops at 2B77 BEFORE F4/QRAM.
 ## Original opcode comparisons: 100,000, zero mismatches.
 
 const State = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
+const BankMap = preload("res://scripts/mechanics/ArcadeMasterBankMap.gd")
 
 const ENTRY_PC: int = 0x2AD6
 const HARDWARE_CONTINUATION: int = 0x2B77
@@ -48,6 +49,23 @@ static func apply_from_original_2ad6(master_ram: PackedByteArray,
         State._set8(out, 0xE900 + word_index * 2, low)
         State._set8(out, 0xE901 + word_index * 2, high)
     return _result(out, HARDWARE_CONTINUATION, group, true, source_address)
+
+
+static func apply_from_original_2ad6_mapped_region(
+        master_ram: PackedByteArray,
+        original_ix: int,
+        rotated_master_region: PackedByteArray,
+        observed_f4: int) -> Dictionary:
+    ## Explicit hardware-aware entry: use the actual last OUT F4 latch,
+    ## not a guessed E608 value, and a caller-provided MAME-rotated image.
+    ## Does not change the existing source-window entry or game physics.
+    var window: PackedByteArray = BankMap.event_source_window(
+        rotated_master_region, observed_f4)
+    var result: Dictionary = apply_from_original_2ad6(
+        master_ram, original_ix, window)
+    result["observed_f4"] = observed_f4
+    result["rom_bank"] = observed_f4 & 0x0F
+    return result
 
 
 static func _result(ram: PackedByteArray, next_pc: int, group: int,
