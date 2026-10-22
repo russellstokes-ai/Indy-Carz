@@ -19,17 +19,35 @@ class Original7EA3EventTests(unittest.TestCase):
             write(ram, 0xE800 + i * 16 + 1, 100 + i)
         return ram
 
-    def test_external_collision_service_is_not_fabricated(self):
+    def test_original_8022_0971_early_returns_and_0985_stop(self):
         for category in (0, 1, 2, 11):
             ram = self.seed()
             write(ram, IXS[0] + 0x4E, category)
+            write(ram, IXS[0] + 0x31, 0)
+            write(ram, IXS[0] - 3, 2)
+            write(ram, IXS[0] + 0x23, 0)
             before = bytes(ram)
             result = independent(ram, IXS[0])
-            self.assertEqual((result["branch"], result["next_pc"], result["complete"]),
-                             ("external_8022", 0x8022, False))
+            self.assertEqual((result["branch"], result["next_pc"], result["complete"],
+                              result["collision_gate"]),
+                             ("collision_0985_pending", 0x0985, False, "pending_0985"))
+            self.assertEqual(read(result["ram"], IXS[0] + 0x4E), 1)
             self.assertEqual(read(result["ram"], IXS[0] + 0x31) & 0x40, 0x40)
-            self.assertEqual(read(result["ram"], IXS[0] + 0x7E) & 8, 8)
             self.assertEqual(bytes(ram), before)
+
+        for gate in ("return_status", "return_car_id", "return_secondary"):
+            ram = self.seed()
+            write(ram, IXS[0] + 0x4E, 0)
+            write(ram, IXS[0] + 0x31, 1 if gate == "return_status" else 0)
+            write(ram, IXS[0] - 3, 4 if gate == "return_car_id" else 2)
+            write(ram, IXS[0] + 0x23, 1 if gate == "return_secondary" else 0)
+            result = independent(ram, IXS[0], bytes(280))
+            self.assertEqual(result["collision_gate"], gate)
+            self.assertEqual(result["next_pc"], 0x7091)
+            self.assertTrue(result["complete"])
+            self.assertEqual(read(result["ram"], IXS[0] + 0x4E),
+                             0 if gate == "return_status" else 1)
+
 
     def test_reuse_updates_existing_event_without_allocation(self):
         for ix in IXS:
