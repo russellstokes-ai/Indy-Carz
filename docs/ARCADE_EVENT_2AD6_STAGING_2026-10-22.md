@@ -9,6 +9,11 @@ from the car's `IX+3A` byte, reads two bytes from the original mapped
 and a second byte 25 addresses later. Earlier groups default to `0013`;
 later groups default to `0001`.
 
+**Bank dependency:** Source addresses at `4000+` are in a banked ROM
+window. Original opcode parity verifies the selection arithmetic, but does
+not establish which bank the live arcade hardware exposes for every frame.
+The caller must provide the actual active mapped source bytes.
+
 | Input `IX+3A` | Group | Selected E900 word | Source address |
 |---|---:|---|---|
 | 0–11 | 0 | E900/E901 | `3F50 + value` |
