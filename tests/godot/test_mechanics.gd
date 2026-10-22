@@ -18,6 +18,7 @@ const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorr
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const DriveCarry = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
+const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
@@ -67,6 +68,7 @@ func _initialize() -> void:
     _test_original_scratch_serializer_and_car_state()
     _test_original_714e_control_selector()
     _test_original_7124_carry_and_714e_pipeline()
+    _test_original_geometry_checkpoint_and_restore()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1657,6 +1659,50 @@ func _test_original_7124_carry_and_714e_pipeline() -> void:
     _verify(CollisionRetry.get16(bypass["ram"], 0xE933) == 0 and
             CollisionRetry.get16(state, 0xE933) == 0xFFFF,
             "original 7124 E933 effect precedes 714E shortcut without mutating input")
+
+
+func _test_original_geometry_checkpoint_and_restore() -> void:
+    ## Genuine original 75F2-7634 saves 11 independent words.
+    ## Original BC8C/C468 fallback restores them later. The caller,
+    ## not this helper, owns the original collision call scheduling.
+    var input_ram: PackedByteArray = PackedByteArray()
+    input_ram.resize(0x2000)
+    input_ram.fill(0xA5)
+    var golden: Dictionary = {}
+    for index in range(CollisionCheckpoint.SOURCE_TO_BACKUP.size()):
+        var pair: Array = CollisionCheckpoint.SOURCE_TO_BACKUP[index]
+        var word: int = (0x9A50 + index * 381) & 65535
+        CollisionRetry._set16(input_ram, pair[0], word)
+        CollisionRetry._set16(input_ram, pair[1], 0x1234)
+        golden[pair[0]] = word
+
+    var before: PackedByteArray = input_ram.duplicate()
+    var checkpoint: Dictionary = CollisionCheckpoint.snapshot(input_ram)
+    var saved: PackedByteArray = checkpoint["ram"]
+    _verify(checkpoint["original_saved_words"] == 11 and
+            checkpoint["next_pc"] == 0x7634 and
+            checkpoint["writes"].size() == 11,
+            "original 75F2 saves all 11 words and returns at 7634")
+    for pair in CollisionCheckpoint.SOURCE_TO_BACKUP:
+        _verify(CollisionRetry.get16(saved, pair[1]) == golden[pair[0]],
+                "original collision checkpoint copy matches exact source")
+    _verify(input_ram == before,
+            "original geometry checkpoint returns a snapshot without mutating input")
+
+    var collided: PackedByteArray = saved.duplicate()
+    for pair in CollisionCheckpoint.SOURCE_TO_BACKUP:
+        CollisionRetry._set16(collided, pair[0], 0)
+    collided[0xE92E - 0xE000] = 17
+    var original_reset: Dictionary = CollisionRetry.retry(collided, 0xE080)
+    var final_state: PackedByteArray = original_reset["ram"]
+    _verify(original_reset["next_pc"] == 0xBC9E and
+            original_reset["words_restored"] == 11,
+            "authentic count18 triggers original 11-word rollback")
+    for pair in CollisionCheckpoint.SOURCE_TO_BACKUP:
+        _verify(CollisionRetry.get16(final_state, pair[0]) == golden[pair[0]],
+                "original 75F2 checkpoint survives genuine C468 state restoration")
+    _verify(CollisionRetry.get16(collided, 0xE72B) == 0,
+            "original rollback does not mutate the pre-reset memory buffer")
 
 
 func _test_portrait_camera() -> void:
