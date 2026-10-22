@@ -22,6 +22,7 @@ const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
 const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
+const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
@@ -86,6 +87,7 @@ func _run_checks() -> void:
     _test_original_709c_to_per_car_slot()
     _test_original_7049_slow_stage()
     _test_original_7e5e_early_returns_stage()
+    _test_original_2ad1_original_bit_gate()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2037,6 +2039,23 @@ func _test_original_7e5e_early_returns_stage() -> void:
                     "original 7E5E only modifies physical high byte on signed special return")
 
 
+func _test_original_2ad1_original_bit_gate() -> void:
+    for index in range(5):
+        var ix: int = CollisionRetry.CAR_POINTERS[index]
+        for status in [0, 1, 0xA4, 0xEF]:
+            var ram: PackedByteArray = PackedByteArray()
+            ram.resize(CollisionRetry.LENGTH)
+            ram.fill(0xA5)
+            CollisionRetry._set8(ram,ix + 0x31,status)
+            var before: PackedByteArray = ram.duplicate()
+            var actual: Dictionary = External2AD1.apply_from_original_call(ram,ix)
+            var accepted: bool = (status & 1) != 0
+            _verify(actual["ram"] == before and ram == before and
+                    actual["next_pc"] == (0x709B if accepted else 0x2AD6) and
+                    actual["complete"] == accepted,
+                    "original 2AD1 ROM BIT0 branch returns safely or stops before banked events")
+
+
 func _test_original_7d65_smoothing_stage() -> void:
     for index in range(5):
         var ix: int = CollisionRetry.CAR_POINTERS[index]
@@ -2087,8 +2106,9 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
         var slot: int = ScratchSerializer.physical_slot_for_ix(ix)
         for route in ["fast", "slow", "slow_7e5e", "slow_7e5e_return",
                       "slow_7e5e_flag_return", "slow_7e5e_special_return",
-                      "slow_7e5e_return_to_2ad1",
-                      "slow_2ad1", "special", "special_direct"]:
+                      "slow_7e5e_return_to_2ad1", "slow_7e5e_return_to_2ad1_return",
+                      "slow_2ad1", "slow_2ad1_return",
+                      "special", "special_direct"]:
             var ram: PackedByteArray = PackedByteArray()
             ram.resize(CollisionRetry.LENGTH)
             ram.fill(0)
@@ -2113,7 +2133,8 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                 CollisionRetry._set8(ram,ix + 0x39,0)
                 CollisionRetry._set8(ram,ix + 0x3A,3)
                 CollisionRetry._set8(ram,ix - 3,
-                    2 if route in ["slow_2ad1", "slow_7e5e_return_to_2ad1"] else 3)
+                    2 if route in ["slow_2ad1", "slow_2ad1_return",
+                    "slow_7e5e_return_to_2ad1", "slow_7e5e_return_to_2ad1_return"] else 3)
                 CollisionRetry._set8(ram,0xE94D,3 if route == "slow_7e5e" else 0)
                 if route.begins_with("slow_7e5e"):
                     CollisionRetry._set8(ram,0xE94D,3)
@@ -2125,6 +2146,9 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                     CollisionRetry._set8(ram,0xE638,128)
                     CollisionRetry._set8(ram,0xE602,0)
                     CollisionRetry._set8(ram,0xE674,1)
+                if route in ["slow_2ad1_return", "slow_7e5e_return_to_2ad1_return"]:
+                    CollisionRetry._set8(ram,ix + 0x31,
+                        CollisionRetry.get8(ram,ix + 0x31) | 1)
             var original: PackedByteArray = ram.duplicate()
             var prepared: PackedByteArray = ScratchSerializer.load_slot_to_scratch(ram,slot)
             var checkpoint: Dictionary = CollisionCheckpoint.snapshot(prepared)
@@ -2182,20 +2206,27 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                         (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
                         "original 7049 normal branch preserves 75F1 or 1689 termination")
             elif route in ["slow_7e5e", "slow_2ad1"]:
-                var target: int = 0x7EA3 if route == "slow_7e5e" else 0x2AD1
+                var target: int = 0x7EA3 if route == "slow_7e5e" else 0x2AD6
                 _verify(preflight["next_pc"] == 0x7049 and
                         actual["next_pc"] == target and not actual["complete"] and
                         not actual["scratch_saved"] and
                         actual["original_slow_7049"]["next_pc"] ==
                             (0x7E5E if route == "slow_7e5e" else 0x2AD1) and
                         CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
-                        "original 7049 stops safely at 7EA3 dispatch or 2AD1 call")
+                        "original 7049 stops safely at 7EA3 or banked 2AD6 dispatch")
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and
                         actual["original_external_7e5e"]["branch"] == "return_equal" and
-                        actual["next_pc"] == 0x2AD1 and not actual["complete"] and
+                        actual["original_external_2ad1"]["next_pc"] == 0x2AD6 and
+                        actual["next_pc"] == 0x2AD6 and not actual["complete"] and
                         not actual["scratch_saved"],
-                        "original 7E5E returned CALL exposes real 7098 CP03/2AD1 gate")
+                        "original returned 7E5E exposes real 7098 CP03/2AD1 event gate")
+            elif route in ["slow_2ad1_return", "slow_7e5e_return_to_2ad1_return"]:
+                _verify(actual["original_external_2ad1"]["branch"] == "return_709b" and
+                        actual["original_external_2ad1"]["next_pc"] == 0x709B and
+                        actual["next_pc"] in [0x75F1,0x1689] and
+                        (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
+                        "original 2AD1 bit0 early return resumes real 709B POP BC/709C")
             elif route.begins_with("slow_7e5e_"):
                 var expected_early_return: String = (
                     "return_special" if route == "slow_7e5e_special_return" else

@@ -32,6 +32,7 @@ const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
 const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
+const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -285,7 +286,8 @@ static func run_verified_original_slot_from_7017(
     ## JP7572, skipping speed integration but updating the footprint.
     ## SLOW 7049 now computes genuine Z80 fixed-point decrements and
     ## continues at 709C; the separate bounded 7E5E early-return
-    ## verifier may also resume it, while 7EA3/2AD1 remain opaque.
+    ## verifier may also resume it; 2AD1 now has its original BIT0
+    ## immediate return. 7EA3 and 2AD6 event dispatch remain opaque.
     ## The original 7D65 smoothing branch also authentically returns
     ## to 7024 then skips 7530 via the original JP7572 geometry path.
     assert(master_ram.size() == State.LENGTH)
@@ -330,6 +332,7 @@ static func run_verified_original_slot_from_7017(
     var inherited_b: int = preflight["b"]
     var slow: Dictionary = {}
     var external: Dictionary = {}
+    var external2: Dictionary = {}
     var pending_pc: int = -1
     if preflight["next_pc"] == Slow7049.ENTRY_PC:
         slow = Slow7049.apply_from_original_7049(
@@ -353,6 +356,16 @@ static func run_verified_original_slot_from_7017(
             pending_pc = Slow7049.EXTERNAL_2AD1
         else:
             assert(slow["next_pc"] == Speed709C.ENTRY_PC)
+        if pending_pc == External2AD1.ENTRY_PC:
+            # Original 7092 PUSH BC; 7098 CALL C,2AD1. Its REAL
+            # 2AD5 RET NZ on bit0 returns to 709B POP BC, restoring
+            # inherited B and continuing to 709C. Do not execute the
+            # large unverified banked event side effects from 2AD6.
+            external2 = External2AD1.apply_from_original_call(
+                drive_ram,original_ix)
+            drive_ram = external2["ram"]
+            pending_pc = (-1 if external2["next_pc"] ==
+                External2AD1.NORMAL_CALL_RETURN else External2AD1.OPAQUE_DISPATCH_PC)
         if pending_pc != -1:
             return {
                 "ram": drive_ram, "complete": false,
@@ -361,8 +374,9 @@ static func run_verified_original_slot_from_7017(
                 "checkpoint_75f2": saved, "preflight_701a": preflight,
                 "original_slow_7049": slow, "original_speed_709c": {},
                 "original_external_7e5e": external,
+                "original_external_2ad1": external2,
                 "pending_original_call": "%04X" % pending_pc,
-                "unverified_downstream": "original 7EA3 event dispatch or 2AD1 side effects"
+                "unverified_downstream": "original 7EA3/2AD6 event dispatch side effects"
             }
     else:
         assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
@@ -390,6 +404,7 @@ static func run_verified_original_slot_from_7017(
     result["preflight_701a"] = preflight
     result["original_slow_7049"] = slow
     result["original_external_7e5e"] = external
+    result["original_external_2ad1"] = external2
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]

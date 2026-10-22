@@ -14,8 +14,8 @@
 | Adjacent position and `IX+51 >= 0x1E` | 16,666 | `RET NC` at `7EA2` |
 | Remaining cases | 33,333 | Stop at `7EA3`, **before** unverified event dispatch |
 
-The Godot `ArcadeDriveExternal7E5E.gd` follows only those instructions. On verified early return, `ArcadeVerifiedVehiclePhysicsPrefix.run_verified_original_slot_from_7017` executes the original `7091 POP BC` effect (preserving saved B), evaluates the true `7092–709B` `IX-03` conditional gate, and resumes already recovered `709C→75F1` only when the original skips `CALL 2AD1`.
+The Godot `ArcadeDriveExternal7E5E.gd` follows only those instructions. On verified early return, `ArcadeVerifiedVehiclePhysicsPrefix.run_verified_original_slot_from_7017` executes the original `7091 POP BC` effect (preserving saved B), evaluates the true `7092–709B` `IX-03` conditional gate, and resumes already recovered `709C→75F1` if the original skips `CALL 2AD1` or takes its separately recovered [bit-0 immediate return](ARCADE_DRIVING_2AD1_EARLY_RETURN_2026-10-22.md).
 
-The original `7EA3` event branch is **not** approximated. It leads to indexed status changes, multiple external routines (`8022`, `8659`, `1767`, `174E`), IY event records and further collision/race logic. Those effects remain unverified, as does the separate original `2AD1` call. Neither path commits a fake 48-word scratch storeback.
+The original `7EA3` event branch is **not** approximated. It leads to indexed status changes, multiple external routines (`8022`, `8659`, `1767`, `174E`), IY event records and further collision/race logic. Those effects remain unverified, as does the `2AD6–2BCC` banked event continuation beyond the five-byte `2AD1` gate. Neither unresolved path commits a fake 48-word scratch storeback.
 
 No original executable, X-ROM table, circuit art, gameplay asset, or tuneable collision approximation is distributed. The same unchanged circuit layout and slow bounded portrait camera are preserved. This is a bounded recovery milestone, not a completed driving frame or game.
