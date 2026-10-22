@@ -24,6 +24,8 @@ const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd
 const Control = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
 const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoubleProjection.gd")
 const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
+const SecondProjection = preload("res://scripts/mechanics/ArcadeSteeringSecondProjection.gd")
+const SteeringDecay = preload("res://scripts/mechanics/ArcadeSteeringDecay.gd")
 
 const E76B: int = 0xE76B
 const E768: int = 0xE768
@@ -429,3 +431,62 @@ static func advance_through_original_steering_speed_limit(
     earlier["verified_prefix_complete"] = true
     earlier["unverified_downstream"] = "original Z80 7499–752F"
     return earlier
+
+
+
+static func advance_through_original_steering_decay(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_b: int,
+        original_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Complete bounded original Z80 maths from 71C8 to the original
+    ## car-movement entry 7530, including distinct 7315 jump paths.
+    ##
+    ## This only runs the verified ORIGINAL code stages. The physics
+    ## update scheduler, prior original B/C selectors, original ROM
+    ## factors and control table MUST be supplied by a separately
+    ## authenticated input path. Do not inject arbitrary tuning.
+    ##
+    ## Normal 7315 route jumps directly to 7530 and skips all
+    ## 7376–752F steering operations. Original 1689 also halts this
+    ## bounded chain rather than fabricating a continuation.
+    var previous: Dictionary = advance_through_original_steering_speed_limit(
+        master_ram, physical_car, original_ix,
+        original_b, original_c,
+        original_direct_factor, original_reverse_factor,
+        control_table_256, original_weighting_factor)
+    previous["second_projection_7499"] = {}
+    previous["steering_decay_74d8"] = {}
+
+    if previous["next_pc"] != 0x7499:
+        # Either original direct 7315->7530, or nonlocal 1689.
+        assert(previous["next_pc"] == 0x7530 or
+               previous["next_pc"] == NONLOCAL_PC)
+        return previous
+
+    var current_ram: PackedByteArray = previous["ram"]
+    var original_selected_c: int = previous["steering_7376"]["c"]
+    var original_car_byte: int = State.get8(current_ram, original_ix + 0x00)
+    var next_projection: Dictionary = SecondProjection.calculate(
+        original_selected_c,
+        original_car_byte,
+        State.get16(current_ram, 0xE767),
+        State.get16(current_ram, 0xE769))
+    assert(next_projection["next_pc"] == 0x74D8)
+    previous["second_projection_7499"] = next_projection
+
+    var next_decay: Dictionary = SteeringDecay.apply_to_ram(
+        current_ram, original_ix, next_projection["de_projection"])
+    assert(next_decay["next_pc"] == 0x7530)
+    previous["steering_decay_74d8"] = next_decay
+    previous["ram"] = next_decay["ram"]
+    previous["next_pc"] = 0x7530
+    previous["complete"] = true
+    previous["verified_prefix_complete"] = true
+    previous["unverified_downstream"] = "original per-car 7530+ geometry and collision scheduling"
+    return previous
