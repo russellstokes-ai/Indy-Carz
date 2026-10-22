@@ -44,6 +44,14 @@ func _verify(condition: bool, description: String) -> void:
 
 
 func _initialize() -> void:
+    # SceneTree._initialize runs before the root has entered the tree.
+    # Start checks once Camera2D can safely query the real viewport.
+    call_deferred("_run_checks")
+
+
+func _run_checks() -> void:
+    _verify(root.is_inside_tree(),
+            "headless test runner must execute with a live scene tree")
     _test_original_wheel()
     _test_original_steering_accumulators()
     _test_original_accelerator()
@@ -68,6 +76,8 @@ func _initialize() -> void:
     _test_original_scratch_serializer_and_car_state()
     _test_original_714e_control_selector()
     _test_original_7124_carry_and_714e_pipeline()
+    _test_original_7315_resume_equivalence()
+    _test_original_slot_carry_selected_driving_pipeline()
     _test_original_geometry_checkpoint_and_restore()
     _test_portrait_camera()
 
@@ -1594,9 +1604,10 @@ func _test_original_714e_control_selector() -> void:
         master, car, 0xE080, fake_table, 0,
         0xAB, 0xCD, 127, 127, steer_table, 127)
     _verify(result["original_714e_bypass"] and
-            result["next_pc"] == 0x7315 and not result["complete"] and
-            result["ram"] == master,
-            "original bypass must preserve input master RAM and skip motion updates")
+            result["next_pc"] == 0x7530 and result["complete"] and
+            CollisionRetry.get16(result["ram"],0xE76B) ==
+            CollisionRetry.get16(master,0xE76B),
+            "original bypass resumes at 7315 without preceding drive calculations")
 
 
 func _test_original_7124_carry_and_714e_pipeline() -> void:
@@ -1652,13 +1663,153 @@ func _test_original_7124_carry_and_714e_pipeline() -> void:
     var bypass: Dictionary = MotionChain.advance_from_verified_7124_carry_source(
         state, car, 0xE080, table_257, 0xAB, 0xCD,
         127, 127, steering_table, 127)
-    _verify(bypass["next_pc"] == 0x7315 and
+    _verify(bypass["next_pc"] == 0x7530 and bypass["complete"] and
             bypass["original_714e_bypass"] and
             bypass["used_carry"] == 0,
-            "real 7124 zero-carry gate skips original 71C8-7314")
+            "real 7124 zero-carry gate resumes steering at 7315")
     _verify(CollisionRetry.get16(bypass["ram"], 0xE933) == 0 and
             CollisionRetry.get16(state, 0xE933) == 0xFFFF,
             "original 7124 E933 effect precedes 714E shortcut without mutating input")
+
+
+func _test_original_7315_resume_equivalence() -> void:
+    ## The same original 7315 input must give exactly the same output
+    ## whether earlier 71C8–7314 ran normally or 714E jumped over it.
+    ## Compare two independently composed routes over both steering exits.
+    var table: PackedByteArray = PackedByteArray()
+    for n in range(256):
+        table.append((57 * n + 113) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        for low_steering in [false, true]:
+            var master: PackedByteArray = PackedByteArray()
+            master.resize(0x2000)
+            master.fill(0)
+            CollisionRetry._set16(master,0xE735,0x1000)
+            CollisionRetry._set16(master,0xE72B,0xB000)
+            CollisionRetry._set16(master,0xE767,0x2400)
+            CollisionRetry._set16(master,0xE769,0x4000)
+            CollisionRetry._set16(master,0xE76B,0x3F00)
+            CollisionRetry._set16(master,0xE771,
+                0x00FF if low_steering else 0x0100)
+            CollisionRetry._set16(master,0xE773,0x0200)
+            CollisionRetry._set16(master,0xE789,0x0800)
+            master[ix + 0x70 - 0xE000] = 130
+            master[ix + 0x71 - 0xE000] = 21
+            master[ix - 1 - 0xE000] = 255
+            master[ix + 0x79 - 0xE000] = 0x80
+            master[ix + 0x31 - 0xE000] = 0
+            master[ix + 0x41 - 0xE000] = 1
+            master[ix + 0x00 - 0xE000] = 0xC1
+            var car: ArcadeCarRecord = Car.new()
+            car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+            var start: Dictionary = MotionChain.advance_through_original_angular_update(
+                master,car,0,0,0,0)
+            var existing: Dictionary = MotionChain.advance_through_original_steering_decay(
+                master,car,ix,0,0,0,0,table,255)
+            var resumed: Dictionary = MotionChain.advance_from_original_7315(
+                start["ram"],ix,table,255)
+            _verify(start["next_pc"] == 0x7315 and
+                    existing["next_pc"] == 0x7530 and
+                    resumed["next_pc"] == 0x7530 and
+                    resumed["complete"] and
+                    resumed["ram"] == existing["ram"],
+                    "original 7315 resume matches existing full steering suffix")
+            _verify(resumed["steering_7315"]["next_pc"] ==
+                    (0x7376 if low_steering else 0x7530),
+                    "original 7315 direct and low-threshold branches stay distinct")
+
+
+func _test_original_slot_carry_selected_driving_pipeline() -> void:
+    ## Composition test: the original six-slot serializer, authentic
+    ## 7124 carry, 714E B/C selector and previously verified 71C8-75F0
+    ## arithmetic must agree with the same independently staged calls.
+    ## Synthetic table contents test the pipeline, NOT real-race parity.
+    var source_table: PackedByteArray = PackedByteArray()
+    source_table.resize(257)
+    source_table.fill(0)
+    source_table[2] = 8
+    source_table[3] = 4
+    var steering_table: PackedByteArray = PackedByteArray()
+    steering_table.resize(256)
+    steering_table.fill(0)
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        var slot: int = ScratchSerializer.physical_slot_for_ix(ix)
+        for carry_case in [true, false]:
+            var original_ram: PackedByteArray = PackedByteArray()
+            original_ram.resize(0x2000)
+            original_ram.fill(0)
+            CollisionRetry._set16(original_ram,slot + 0x00,0xB000)
+            CollisionRetry._set16(original_ram,slot + 0x0A,0x1000)
+            # E768 is the HIGH byte of the E767 word. Keep it zero
+            # for the known cosine/carry test vector at heading zero.
+            CollisionRetry._set16(original_ram,slot + 0x3C,0x0000)
+            CollisionRetry._set16(original_ram,slot + 0x3E,0x0000)
+            CollisionRetry._set16(original_ram,slot + 0x40,
+                0x1234 if carry_case else 0)
+            CollisionRetry._set16(original_ram,slot + 0x42,0x0100)
+            CollisionRetry._set16(original_ram,slot + 0x44,0x0100)
+            CollisionRetry._set16(original_ram,slot + 0x46,0x0100)
+            CollisionRetry._set16(original_ram,slot + 0x48,0x0200)
+            CollisionRetry._set16(original_ram,slot + 0x5E,0x0800)
+            original_ram[ix + 0x57 - 0xE000] = 16
+            original_ram[ix + 0x70 - 0xE000] = 1
+            original_ram[ix + 0x71 - 0xE000] = 19
+            original_ram[ix + 0x6E - 0xE000] = 1
+            original_ram[ix + 0x6F - 0xE000] = 19
+            original_ram[ix + 0x79 - 0xE000] = 0x80
+            original_ram[0xE600 - 0xE000] = 0xC6
+            CollisionRetry._set16(original_ram,0xE933,0xDEAD)
+            var unchanged: PackedByteArray = original_ram.duplicate()
+
+            var actual: Dictionary = PhysicsPrefix.run_verified_original_slot_from_7124(
+                original_ram,ix,source_table,0xAB,0xCD,
+                0,0,steering_table,255)
+            var loaded: PackedByteArray = ScratchSerializer.load_slot_to_scratch(
+                original_ram,slot)
+            var projection: Dictionary = DriveCarry.apply_to_ram(loaded)
+            var car: ArcadeCarRecord = Car.new(loaded.slice(
+                slot - 0xE000,slot - 0xE000 + 256))
+            var selected: Dictionary = DriveBC.select_from_original_state(
+                projection["ram"],car,source_table,
+                0xAB,0xCD,projection["carry"])
+
+            _verify(projection["carry"] == int(carry_case),
+                    "known original 7124 source vector exercises both carry values")
+            _verify(actual["used_carry"] == projection["carry"] and
+                    actual["bc_selection"]["next_pc"] == selected["next_pc"] and
+                    actual["scratch_loaded"] and
+                    actual["physical_slot"] == slot,
+                    "per-slot original 7124 carry feeds genuine 714E selector")
+            _verify(original_ram == unchanged and
+                    CollisionRetry.get8(actual["ram"],0xE600) == 0xC6,
+                    "verified original slot pipeline retains caller and unrelated RAM")
+
+            if carry_case:
+                _verify(selected["next_pc"] == 0x71C8 and
+                        selected["b"] == 4 and selected["c"] == 2,
+                        "authentic carried-borrow blend supplies nonzero B/C")
+                var staged: Dictionary = PhysicsPrefix.run_verified_original_slot_stage(
+                    projection["ram"],ix,selected["b"],selected["c"],
+                    0,0,steering_table,255)
+                _verify(actual["complete"] and actual["scratch_saved"] and
+                        actual["next_pc"] == 0x75F1 and
+                        actual["ram"] == staged["ram"],
+                        "7124->714E->71C8->75F1 completes original 48-word storeback")
+            else:
+                var resumed: Dictionary = MotionChain.advance_from_original_7315(
+                    projection["ram"],ix,steering_table,255)
+                var movement: Dictionary = PhysicsPrefix.apply_original_7530_to_75f1(
+                    resumed["ram"])
+                var stored: PackedByteArray = ScratchSerializer.save_scratch_to_slot(
+                    movement["ram"],slot)
+                _verify(selected["next_pc"] == 0x7315 and
+                        actual["complete"] and actual["scratch_saved"] and
+                        actual["original_714e_bypass"] and
+                        actual["next_pc"] == 0x75F1 and
+                        CollisionRetry.get16(resumed["ram"],0xE76B) == 0 and
+                        actual["ram"] == stored,
+                        "original 7315 bypass completes geometry without invented drive motion")
 
 
 func _test_original_geometry_checkpoint_and_restore() -> void:

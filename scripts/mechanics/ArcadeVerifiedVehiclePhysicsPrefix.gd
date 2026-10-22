@@ -180,3 +180,62 @@ static func run_verified_original_slot_stage(
         result["complete"] = false
 
     return result
+
+
+static func run_verified_original_slot_from_7124(
+        master_ram: PackedByteArray,
+        original_ix: int,
+        original_control_window_257: PackedByteArray,
+        inherited_b: int,
+        inherited_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        steering_control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Connect the already opcode-verified original 7124/714E selector
+    ## to the authentic 71C8–75F0 per-car motion/geometry prefix.
+    ## First load the selected physical car's 48 original working words,
+    ## then produce the real carry and B/C bytes before the drive stages.
+    ## All lookup bytes/factors still come from an authenticated caller.
+    ## This is NOT the full arcade frame/collision scheduler.
+    assert(master_ram.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    var physical_slot: int = Serializer.physical_slot_for_ix(original_ix)
+    var prepared: PackedByteArray = Serializer.load_slot_to_scratch(
+        master_ram, physical_slot)
+    var physical_bytes: PackedByteArray = prepared.slice(
+        physical_slot - State.BASE,
+        physical_slot - State.BASE + Serializer.ORIGINAL_SLOT_LENGTH)
+    var original_car: ArcadeCarRecord = Car.new(physical_bytes)
+
+    var result: Dictionary = Chain.advance_from_verified_7124_carry_source(
+        prepared, original_car, original_ix,
+        original_control_window_257, inherited_b, inherited_c,
+        original_direct_factor, original_reverse_factor,
+        steering_control_table_256, original_weighting_factor)
+    result["physical_slot"] = physical_slot
+    result["scratch_loaded"] = true
+    result["scratch_saved"] = false
+    result["original_movement_7530"] = {}
+
+    if result["next_pc"] != ORIGINAL_MOVE_START:
+        # The authentic 714E->7315 bypass now resumes the verified
+        # steering suffix and reaches 7530. Only original nonlocal
+        # CALL PE 1689 escapes; never fake a 75F1 scratch save there.
+        assert(result["next_pc"] == 0x1689)
+        result["complete"] = false
+        result["verified_prefix_complete"] = true
+        result["unverified_downstream"] = "original nonlocal 1689 diagnostic continuation"
+        return result
+
+    var movement: Dictionary = apply_original_7530_to_75f1(result["ram"])
+    result["ram"] = Serializer.save_scratch_to_slot(
+        movement["ram"], physical_slot)
+    result["original_movement_7530"] = movement
+    result["next_pc"] = ORIGINAL_RETURN_PC
+    result["scratch_saved"] = true
+    result["complete"] = true
+    result["verified_prefix_complete"] = true
+    result["unverified_downstream"] = (
+        "original post-75F1 callbacks, car/terrain collisions and race scheduling")
+    return result

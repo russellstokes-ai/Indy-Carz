@@ -31,4 +31,13 @@ jobs:
       - name: Parse scripts and import project headlessly
         run: godot --headless --editor --path . --quit
       - name: Run verified-original-mechanics and camera smoke tests
-        run: godot --headless --path . --script res://tests/godot/test_mechanics.gd
+        shell: bash
+        run: |
+          # Godot may report GDScript compile/runtime errors but exit zero.
+          # Capture stderr too, and require a clean explicit test marker.
+          set +e
+          godot --headless --path . --script res://tests/godot/test_mechanics.gd 2>&1 | tee "$RUNNER_TEMP/indy-godot-tests.log"
+          process_status=("${PIPESTATUS[@]}")
+          set -e
+          test "${process_status[1]}" -eq 0
+          python tools/check_godot_test_output.py --exit-code "${process_status[0]}" < "$RUNNER_TEMP/indy-godot-tests.log"

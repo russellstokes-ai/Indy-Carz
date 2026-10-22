@@ -23,7 +23,7 @@ const Source7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.g
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
-const Control = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
+const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
 const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoubleProjection.gd")
 const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
 const SecondProjection = preload("res://scripts/mechanics/ArcadeSteeringSecondProjection.gd")
@@ -359,7 +359,7 @@ static func advance_through_original_steering_control(
         return previous
 
     var ram: PackedByteArray = previous["ram"]
-    var control: Dictionary = Control.calculate(
+    var control: Dictionary = SteeringControl.calculate(
         State.get16(ram, 0xE789),
         State.get16(ram, 0xE773),
         State.get16(ram, 0xE787),
@@ -495,6 +495,91 @@ static func advance_through_original_steering_decay(
 
 
 
+static func advance_from_original_7315(
+        master_ram: PackedByteArray,
+        original_ix: int,
+        control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## The authentic 714E high-threshold bypass jumps DIRECTLY to 7315.
+    ## Resume only original-Z80-verified 7315–752F steering; 71C8–7314
+    ## acceleration and angular updates must not execute on this route.
+    assert(master_ram.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    assert(control_table_256.size() == 256)
+    assert(original_weighting_factor >= 0 and original_weighting_factor <= 255)
+
+    var first: Dictionary = Steering7315.apply_to_ram(master_ram, original_ix)
+    var result: Dictionary = {
+        "ram": first["ram"],
+        "next_pc": first["next_pc"],
+        "complete": true,
+        "verified_prefix_complete": true,
+        "steering_7315": first,
+        "steering_7376": {},
+        "weighted_73cd": {},
+        "steering_control_73f6": {},
+        "double_projection_7442": {},
+        "speed_limiter_7463": {},
+        "second_projection_7499": {},
+        "steering_decay_74d8": {},
+        "unverified_downstream": "original per-car 7530+ geometry and collision scheduling"
+    }
+    if first["next_pc"] == 0x7530:
+        # Original 7315 normal exit skips every 7376–752F instruction.
+        return result
+
+    assert(first["next_pc"] == 0x7376 or first["next_pc"] == 0x7381)
+    var current: PackedByteArray = first["ram"]
+    var selector: Dictionary = SteeringLookup.after_verified_7315(
+        first,
+        State.get16(current, 0xE773),
+        State.get8(current, original_ix + 0x70),
+        State.get8(current, original_ix + 0x71),
+        control_table_256)
+    assert(selector["next_pc"] == 0x73CD)
+    result["steering_7376"] = selector
+
+    var weighted: Dictionary = Weighted.calculate(
+        State.get8(current, 0xE76C), selector["b"],
+        State.get8(current, original_ix - 1),
+        original_weighting_factor)
+    assert(weighted["next_pc"] == 0x73F6)
+    result["weighted_73cd"] = weighted
+
+    var control: Dictionary = SteeringControl.calculate(
+        State.get16(current, 0xE789),
+        State.get16(current, 0xE773),
+        State.get16(current, 0xE787),
+        State.get16(current, 0xE771),
+        State.get8(current, original_ix + 0x79))
+    assert(control["next_pc"] == 0x7442)
+    result["steering_control_73f6"] = control
+
+    var projection: Dictionary = DoubleProjection.calculate(
+        control["a"], State.get8(current, original_ix + 0x79),
+        weighted["weighted"], State.get8(current, original_ix + 0x31))
+    var limited: Dictionary = SpeedLimiter.apply_to_ram(
+        current, original_ix, projection["correction"])
+    assert(limited["limiter_bypassed"] == projection["skip_velocity_limiter"])
+    assert(limited["next_pc"] == 0x7499)
+    result["double_projection_7442"] = projection
+    result["speed_limiter_7463"] = limited
+
+    current = limited["ram"]
+    var second: Dictionary = SecondProjection.calculate(
+        selector["c"], State.get8(current, original_ix + 0x00),
+        State.get16(current, 0xE767), State.get16(current, 0xE769))
+    assert(second["next_pc"] == 0x74D8)
+    var decay: Dictionary = SteeringDecay.apply_to_ram(
+        current, original_ix, second["de_projection"])
+    assert(decay["next_pc"] == 0x7530)
+    result["second_projection_7499"] = second
+    result["steering_decay_74d8"] = decay
+    result["ram"] = decay["ram"]
+    result["next_pc"] = 0x7530
+    return result
+
+
 static func advance_using_verified_714e_selector(
         master_ram: PackedByteArray,
         physical_car: ArcadeCarRecord,
@@ -514,25 +599,20 @@ static func advance_using_verified_714e_selector(
     ## E96B CPU pointer, NOT original ROM code copied into the app.
     ## The 7148 carry flag is a genuine prior-state input, not zero.
     ##
-    ## A 714E -> 7315 bypass MUST SKIP all of 71C8–7314; this helper
-    ## preserves that original branch and stops at 7315 instead of
-    ## erroneously running acceleration. Remaining 7315 steering can
-    ## be handled separately by the corresponding verified stage.
+    ## A 714E -> 7315 bypass MUST SKIP all of 71C8–7314; the already
+    ## verified steering suffix resumes directly from original 7315.
     assert(master_ram.size() == State.LENGTH)
     assert(State.CAR_POINTERS.has(original_ix))
     var selected: Dictionary = DriveBC.select_from_original_state(
         master_ram, physical_car, original_table_257,
         inherited_b, inherited_c, inherited_carry)
     if selected["next_pc"] == 0x7315:
-        return {
-            "complete": false,
-            "verified_prefix_complete": true,
-            "original_714e_bypass": true,
-            "next_pc": 0x7315,
-            "ram": master_ram.duplicate(),
-            "bc_selection": selected,
-            "unverified_downstream": "original 7315 onward needs separate steering stage"
-        }
+        var resumed: Dictionary = advance_from_original_7315(
+            master_ram, original_ix,
+            steering_control_table_256, original_weighting_factor)
+        resumed["bc_selection"] = selected
+        resumed["original_714e_bypass"] = true
+        return resumed
     assert(selected["next_pc"] == 0x71C8)
     var continuation: Dictionary = advance_through_original_steering_decay(
         master_ram, physical_car, original_ix,
