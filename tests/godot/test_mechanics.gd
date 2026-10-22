@@ -24,6 +24,7 @@ const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
 const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
+const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
@@ -90,6 +91,7 @@ func _run_checks() -> void:
     _test_original_7e5e_early_returns_stage()
     _test_original_7ea3_event_dispatch()
     _test_original_2ad1_original_bit_gate()
+    _test_original_2ad6_event_staging()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2156,6 +2158,55 @@ func _test_original_2ad1_original_bit_gate() -> void:
                     "original 2AD1 ROM BIT0 branch returns safely or stops before banked events")
 
 
+func _test_original_2ad6_event_staging() -> void:
+    ## Original 2AD6–2B76 staging is verified independently of its
+    ## still-unknown 2B77 F4 bank/QRAM hardware continuation.
+    var source: PackedByteArray = PackedByteArray()
+    for k in range(512):
+        source.append((k * 37 + 17) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        for value in [0, 11, 12, 35, 36, 59, 60, 255]:
+            var ram: PackedByteArray = PackedByteArray()
+            ram.resize(CollisionRetry.LENGTH)
+            ram.fill(0)
+            CollisionRetry._set8(ram, ix + 0x3A, value)
+            for byte_index in range(8):
+                CollisionRetry._set8(ram, 0xE900 + byte_index, 0xA5)
+            var original: PackedByteArray = ram.duplicate()
+            var group: int = (
+                0 if value < 12 else
+                1 if value < 36 else
+                2 if value < 60 else 3)
+            var source_address: int = Event2AD6.SOURCE_OFFSETS[group] + value
+            var staged: Dictionary = Event2AD6.apply_from_original_2ad6(
+                ram, ix, source)
+            _verify(staged["staging_complete"] and not staged["complete"] and
+                    staged["next_pc"] == 0x2B77 and
+                    staged["source_address"] == source_address and
+                    staged["original_stack_word"] == 0x0108 and
+                    ram == original,
+                    "original 2AD6 group staging preserves caller and stops at 2B77")
+            for word_index in range(4):
+                var expected_low: int = 1
+                var expected_high: int = 0
+                if word_index < group:
+                    expected_low = 0x13
+                elif word_index == group:
+                    expected_low = source[source_address - 0x3F00]
+                    expected_high = source[source_address + 25 - 0x3F00]
+                _verify(CollisionRetry.get8(staged["ram"], 0xE900 + word_index * 2) ==
+                        expected_low and
+                        CollisionRetry.get8(staged["ram"], 0xE901 + word_index * 2) ==
+                        expected_high,
+                        "original 2AD6 LDI table selection and E900 word defaults")
+            var pending: Dictionary = Event2AD6.apply_from_original_2ad6(
+                ram, ix, PackedByteArray())
+            _verify(not pending["staging_complete"] and
+                    pending["next_pc"] == Event2AD6.MISSING_SOURCE_PC[group] and
+                    pending["ram"] == original,
+                    "original 2AD6 stops before first LDI when source table missing")
+
+
 func _test_original_7d65_smoothing_stage() -> void:
     for index in range(5):
         var ix: int = CollisionRetry.CAR_POINTERS[index]
@@ -2306,19 +2357,19 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                         (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
                         "original 7049 normal branch preserves 75F1 or 1689 termination")
             elif route in ["slow_7e5e", "slow_2ad1"]:
-                var target: int = 0x1767 if route == "slow_7e5e" else 0x2AD6
+                var target: int = 0x1767 if route == "slow_7e5e" else 0x2AED
                 _verify(preflight["next_pc"] == 0x7049 and
                         actual["next_pc"] == target and not actual["complete"] and
                         not actual["scratch_saved"] and
                         actual["original_slow_7049"]["next_pc"] ==
                             (0x7E5E if route == "slow_7e5e" else 0x2AD1) and
                         CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
-                        "original 7049 follows 0971 early return and stops at 1767 or 2AD6")
+                        "original 7049 stops at missing 1767 or 2AD6 table LDI")
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and
                         actual["original_external_7e5e"]["branch"] == "return_equal" and
                         actual["original_external_2ad1"]["next_pc"] == 0x2AD6 and
-                        actual["next_pc"] == 0x2AD6 and not actual["complete"] and
+                        actual["next_pc"] == 0x2AED and not actual["complete"] and
                         not actual["scratch_saved"],
                         "original returned 7E5E exposes real 7098 CP03/2AD1 event gate")
             elif route in ["slow_2ad1_return", "slow_7e5e_return_to_2ad1_return"]:
