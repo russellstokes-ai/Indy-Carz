@@ -3,7 +3,8 @@ extends RefCounted
 
 ## Original bank0 Z80 2AD6–2B76: stage four event words in E900–E907.
 ## The original ROM table is NOT bundled. Caller may provide 512 bytes
-## corresponding to original bank0 3F00–40FF. Missing data stops at the
+## corresponding to the original mapped 3F00–40FF memory view. Bytes
+## at 4000+ may depend on the active ROM bank. Missing data stops at the
 ## first genuine LDI; completed staging stops at 2B77 BEFORE F4/QRAM.
 ## Original opcode comparisons: 100,000, zero mismatches.
 
