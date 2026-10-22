@@ -26,6 +26,7 @@ const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
 const Bus2B77 = preload("res://scripts/mechanics/ArcadeDriveEvent2B77Bus.gd")
+const EventBusReplay = preload("res://scripts/mechanics/ArcadeEventBusMemoryReplay.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
@@ -94,6 +95,7 @@ func _run_checks() -> void:
     _test_original_2ad1_original_bit_gate()
     _test_original_2ad6_event_staging()
     _test_original_2b77_bus_trace()
+    _test_original_2b77_hardware_memory_replay()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2543,3 +2545,46 @@ func _test_portrait_camera() -> void:
     _verify(car.position.x == 1800.0,
             "presentation-only camera leaves car's world geometry unchanged")
     world.queue_free()
+
+func _test_original_2b77_hardware_memory_replay() -> void:
+    ## The original Z80 outputs four writes under each of two F4 selections.
+    ## MAME's A000-DFFF view maps these to battery RAM or QRAM planes.
+    var ix: int = CollisionRetry.CAR_POINTERS[0]
+    var ram: PackedByteArray = PackedByteArray()
+    ram.resize(CollisionRetry.LENGTH)
+    ram.fill(0)
+    CollisionRetry._set16(ram, ix + 0x12, 0xAEFC)
+    CollisionRetry._set8(ram, 0xE608, 0x07)
+    CollisionRetry._set8(ram, 0xE613, 0x20)
+    CollisionRetry._set8(ram, 0xE615, 0xA0)
+    for i in range(8):
+        CollisionRetry._set8(ram, 0xE900 + i, 0x11 + i)
+    var battery: PackedByteArray = PackedByteArray()
+    battery.resize(0x4000)
+    battery.fill(0)
+    var qram: PackedByteArray = PackedByteArray()
+    qram.resize(0x10000)
+    qram.fill(0)
+    var original_ram: PackedByteArray = ram.duplicate()
+    var result: Dictionary = EventBusReplay.replay_original_2b77(
+        ram, ix, battery, qram)
+    _verify(result["memory_replay_complete"] and not result["complete"] and
+            result["next_pc"] == 0x2BCC and
+            result["partial_update_requests"] == 8,
+            "original 2B77 QRAM replay follows MAME hardware selection")
+    _verify(original_ram == ram and qram[0x1004] == 0 and
+            battery[0x1004] == 0,
+            "original 2B77 QRAM replay never mutates caller snapshots")
+    var qram_written: PackedByteArray = result["qram"]
+    _verify(qram_written[0x1004] == 0x11 and
+            qram_written[0x9004] == 0x12 and
+            result["qram_dirty_tiles"].size() == 8,
+            "original 2B77 writes to both MAME QRAM planes")
+    CollisionRetry._set16(ram, ix + 0x12, 0xDEFC)
+    var unknown: Dictionary = EventBusReplay.replay_original_2b77(
+        ram, ix, battery, qram)
+    _verify(not unknown["memory_replay_complete"] and
+            unknown["unresolved_address"] >= 0xE000 and
+            unknown["qram"] == qram and unknown["battery_ram"] == battery,
+            "unknown original 2B77 hardware writes fail closed atomically")
+
