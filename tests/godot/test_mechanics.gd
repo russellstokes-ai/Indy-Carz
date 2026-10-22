@@ -17,6 +17,7 @@ const MotionChain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.g
 const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
+const DriveCarry = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
@@ -65,6 +66,7 @@ func _initialize() -> void:
     _test_original_vehicle_physics_prefix()
     _test_original_scratch_serializer_and_car_state()
     _test_original_714e_control_selector()
+    _test_original_7124_carry_and_714e_pipeline()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1593,6 +1595,68 @@ func _test_original_714e_control_selector() -> void:
             result["next_pc"] == 0x7315 and not result["complete"] and
             result["ram"] == master,
             "original bypass must preserve input master RAM and skip motion updates")
+
+
+func _test_original_7124_carry_and_714e_pipeline() -> void:
+    # Exact 7124 E933 outgoing carry is the input carry of 714E.
+    # No original proprietary tuning data or ROM samples in these tests.
+    var motion: Dictionary = DriveCarry.calculate(0, 0, 0x1234)
+    _verify(motion["e933"] == 4622 and motion["carry"] == 1 and
+            motion["next_pc"] == 0x714E,
+            "original 7124 X-ROM result and genuine outgoing CPU carry")
+    _verify(motion["xrom"][0] == 0x127F and
+            motion["xrom"][1] == 0x1A7F,
+            "original two signed slot0 X-ROM lookup addresses")
+
+    var zero: Dictionary = DriveCarry.calculate(0, 0, 0)
+    _verify(zero["e933"] == 0 and zero["carry"] == 0,
+            "original zero-motion path does not manufacture carry")
+
+    var state: PackedByteArray = PackedByteArray()
+    state.resize(0x2000)
+    state.fill(0)
+    CollisionRetry._set16(state, 0xE76B, 0x1234)
+    CollisionRetry._set16(state, 0xE769, 0)
+    CollisionRetry._set16(state, 0xE933, 0xFFFF)
+    CollisionRetry._set16(state, 0xE76D, 0x0100)
+    CollisionRetry._set16(state, 0xE76F, 0x0100)
+    state[0xE600 - 0xE000] = 0xCE
+    var entered: Dictionary = DriveCarry.apply_to_ram(state)
+    _verify(entered["carry"] == 1 and
+            CollisionRetry.get16(entered["ram"], 0xE933) == 4622,
+            "authentic 7124 E933 write and flag-C from same state")
+    _verify(CollisionRetry.get16(state, 0xE933) == 0xFFFF and
+            state[0xE600 - 0xE000] == 0xCE,
+            "7124 stage does not mutate input RAM or unrelated bytes")
+
+    var table_257: PackedByteArray = PackedByteArray()
+    table_257.resize(257)
+    for i in range(257):
+        table_257[i] = (17 * i + 29) & 255
+    var car: ArcadeCarRecord = Car.new()
+    car.write_u8(0xEE, 1)
+    car.write_u8(0xEF, 19)
+    var selection: Dictionary = DriveBC.select_from_original_state(
+        entered["ram"], car, table_257, 0xAB, 0xCD, entered["carry"])
+    _verify(selection["next_pc"] == 0x71C8 and
+            selection["path"] == "rotated_blend",
+            "7124 carried borrow forces original 714E blended B/C path")
+
+    CollisionRetry._set16(state, 0xE76B, 0)
+    CollisionRetry._set16(state, 0xE933, 0xFFFF)
+    var steering_table: PackedByteArray = PackedByteArray()
+    steering_table.resize(256)
+    steering_table.fill(0)
+    var bypass: Dictionary = MotionChain.advance_from_verified_7124_carry_source(
+        state, car, 0xE080, table_257, 0xAB, 0xCD,
+        127, 127, steering_table, 127)
+    _verify(bypass["next_pc"] == 0x7315 and
+            bypass["original_714e_bypass"] and
+            bypass["used_carry"] == 0,
+            "real 7124 zero-carry gate skips original 71C8-7314")
+    _verify(CollisionRetry.get16(bypass["ram"], 0xE933) == 0 and
+            CollisionRetry.get16(state, 0xE933) == 0xFFFF,
+            "original 7124 E933 effect precedes 714E shortcut without mutating input")
 
 
 func _test_portrait_camera() -> void:
