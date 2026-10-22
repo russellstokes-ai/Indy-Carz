@@ -42,6 +42,9 @@ const ScratchSerializer = preload("res://scripts/mechanics/ArcadeScratchSerializ
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
+const CallbackFirst2EAF = preload("res://scripts/mechanics/ArcadeCallbackFirst2EAF.gd")
+const CallbackStatus3006 = preload("res://scripts/mechanics/ArcadeCallbackStatus3006.gd")
+const CallbackVector30D5 = preload("res://scripts/mechanics/ArcadeCallbackVector30D5.gd")
 
 var _failed: int = 0
 var _checks: int = 0
@@ -96,6 +99,7 @@ func _run_checks() -> void:
     _test_original_2ad6_event_staging()
     _test_original_2b77_bus_trace()
     _test_original_2b77_hardware_memory_replay()
+    _test_original_callback_engine_dispatch()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2618,3 +2622,75 @@ func _test_original_2b77_hardware_memory_replay() -> void:
             unknown["qram"] == qram and unknown["battery_ram"] == battery,
             "unknown original 2B77 hardware writes fail closed atomically")
 
+func _test_original_callback_engine_dispatch() -> void:
+    ## Recover three original Z80 pieces of the per-car game callback
+    ## without inventing any of their still-unrecovered callee behavior.
+    for ix in CollisionRetry.CAR_POINTERS:
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(CollisionRetry.LENGTH)
+        ram.fill(0)
+        CollisionRetry._set8(ram, ix + 0x7E, 0xFF)
+        CollisionRetry._set8(ram, ix + 0x1E, 0xFF)
+        CollisionRetry._set8(ram, ix + 0x10, 0xA5)
+        CollisionRetry._set8(ram, ix + 0x56, 0xA5)
+        var before: PackedByteArray = ram.duplicate()
+        var first: Dictionary = CallbackFirst2EAF.run_original_2eaf(ram, ix)
+        _verify(first["next_pc"] == 0x85B4 and
+                CollisionRetry.get8(first["ram"], ix + 0x7E) == 0xFD and
+                CollisionRetry.get8(first["ram"], ix + 0x1E) == 0xFE and
+                CollisionRetry.get8(first["ram"], ix + 0x10) == 0 and
+                CollisionRetry.get8(first["ram"], ix + 0x56) == 0xFF and
+                ram == before and not first["complete"],
+                "original 2EAF callback prelude and 85B4 true stop")
+        CollisionRetry._set8(ram, ix + 0x33, 2)
+        var suppressed: Dictionary = CallbackFirst2EAF.run_original_2eaf(ram, ix)
+        _verify(suppressed["complete"] and suppressed["return_to_caller"] and
+                suppressed["ram"] == ram and suppressed["next_pc"] == 0x2EB3,
+                "original 2EAF disabled car early returns without mutations")
+
+        for mask in range(512):
+            var flags: PackedByteArray = PackedByteArray()
+            flags.resize(CollisionRetry.LENGTH)
+            flags.fill(0)
+            for k in range(CallbackStatus3006.HANDLERS.size()):
+                if ((mask >> k) & 1) != 0:
+                    var entry: Array = CallbackStatus3006.HANDLERS[k]
+                    var off: int = entry[1]
+                    var bit: int = entry[2]
+                    CollisionRetry._set8(flags, ix + off,
+                        CollisionRetry.get8(flags, ix + off) | (1 << bit))
+            for aggregate in [0, 0x10, 0x20, 0x30]:
+                CollisionRetry._set8(flags, ix + 0x34, aggregate)
+                var expected_pc: int = (0x113B if aggregate != 0 else 0x689D)
+                var expected_site: int = (0x304A if aggregate != 0 else 0x304D)
+                for k in range(CallbackStatus3006.HANDLERS.size()):
+                    if ((mask >> k) & 1) != 0:
+                        expected_site = CallbackStatus3006.HANDLERS[k][0]
+                        expected_pc = CallbackStatus3006.HANDLERS[k][3]
+                        break
+                var actual: Dictionary = CallbackStatus3006.run_original_3006(flags, ix)
+                _verify(actual["next_pc"] == expected_pc and
+                        actual["call_site_pc"] == expected_site and
+                        not actual["complete"],
+                        "original 3006 nine-handler ordering for all status masks")
+
+        var projection: PackedByteArray = PackedByteArray()
+        projection.resize(CollisionRetry.LENGTH)
+        projection.fill(0)
+        CollisionRetry._set16(projection, 0xE96F, 0x1234)
+        CollisionRetry._set16(projection, 0xE971, 0x5678)
+        CollisionRetry._set16(projection, 0xE94E, 0x9ABC)
+        CollisionRetry._set16(projection, 0xE735, 0x9040)
+        CollisionRetry._set8(projection, ix + 0x75, 0x80)
+        var original_projection: PackedByteArray = projection.duplicate()
+        var vector: Dictionary = CallbackVector30D5.run_original_30d5(
+            projection, ix, 0, 0xABCD)
+        _verify(vector["a"] == 0xDF and vector["f"] == 0x9B and
+                vector["bc"] == 0xDF80 and vector["de"] == 0x9ABC and
+                vector["hl"] == 0x2080 and vector["alt_bc"] == 0x1234 and
+                vector["alt_de"] == 0x5678 and vector["alt_hl"] == 0xABCD and
+                CollisionRetry.get16(vector["ram"], 0xE77D) == 0x1234 and
+                CollisionRetry.get16(vector["ram"], 0xE77F) == 0x5678 and
+                vector["next_pc"] == 0xD958 and not vector["complete"] and
+                projection == original_projection,
+                "original 30D5 vector prep preserves exact swapped registers and flags")
