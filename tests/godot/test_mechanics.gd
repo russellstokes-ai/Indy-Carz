@@ -20,6 +20,7 @@ const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const DriveCarry = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
+const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
@@ -1969,11 +1970,12 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
     for index in range(5):
         var ix: int = CollisionRetry.CAR_POINTERS[index]
         var slot: int = ScratchSerializer.physical_slot_for_ix(ix)
-        for route in ["fast", "slow", "special"]:
+        for route in ["fast", "slow", "special", "special_direct"]:
             var ram: PackedByteArray = PackedByteArray()
             ram.resize(CollisionRetry.LENGTH)
             ram.fill(0)
-            CollisionRetry._set8(ram,ix + 0x5C,1 if route == "special" else 0)
+            CollisionRetry._set8(ram,ix + 0x5C,
+                3 if route == "special_direct" else (1 if route == "special" else 0))
             CollisionRetry._set8(ram,ix + 0x31,0x10 if route == "fast" else 0)
             CollisionRetry._set8(ram,ix + 0x33,0)
             CollisionRetry._set8(ram,ix + 0x57,255 - index * 21)
@@ -1985,6 +1987,8 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
             CollisionRetry._set16(ram,slot + 0x3A,0x1245 + index * 422)
             CollisionRetry._set8(ram,slot + 0xEE,3)
             CollisionRetry._set8(ram,slot + 0xEF,3)
+            CollisionRetry._set16(ram,ix + 0x65,0x1122 + index * 7)
+            CollisionRetry._set16(ram,ix + 0x67,0x3344 + index * 11)
             var original: PackedByteArray = ram.duplicate()
             var prepared: PackedByteArray = ScratchSerializer.load_slot_to_scratch(ram,slot)
             var checkpoint: Dictionary = CollisionCheckpoint.snapshot(prepared)
@@ -2027,11 +2031,23 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                         not actual["scratch_saved"] and
                         CollisionRetry.get8(actual["ram"],ix - 0x1D) == 0,
                         "original 701A slow throttle path stops at unresolved 7049")
-            else:
-                _verify(actual["next_pc"] == 0x7D4C and not actual["complete"] and
+            elif route == "special":
+                _verify(actual["next_pc"] == 0x7D65 and not actual["complete"] and
                         not actual["scratch_saved"] and
                         CollisionRetry.get8(actual["ram"],ix - 0x1D) == 0xA7,
-                        "original 701A special gate stops BEFORE external 7D4C effects")
+                        "original 7D4C slow smoothing stops at unverified 7D65")
+            else:
+                var direct: Dictionary = Special7D4C.apply_from_original_call(
+                    preflight["ram"],ix)
+                var geom: Dictionary = PhysicsPrefix.apply_original_7572_geometry_only(
+                    direct["ram"])
+                var expected_ram: PackedByteArray = ScratchSerializer.save_scratch_to_slot(
+                    geom["ram"],slot)
+                _verify(direct["next_pc"] == 0x7024 and
+                        actual["original_special_7d4c"]["branch"] == "direct_7024" and
+                        actual["next_pc"] == 0x75F1 and actual["complete"] and
+                        actual["scratch_saved"] and actual["ram"] == expected_ram,
+                        "original special 7D4C direct-centre branch resumes authentic 7572 geometry")
 
 
 func _test_original_geometry_checkpoint_and_restore() -> void:
