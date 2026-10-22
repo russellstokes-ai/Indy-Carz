@@ -22,6 +22,7 @@ const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
 const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
+const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -87,6 +88,7 @@ func _run_checks() -> void:
     _test_original_709c_to_per_car_slot()
     _test_original_7049_slow_stage()
     _test_original_7e5e_early_returns_stage()
+    _test_original_7ea3_event_dispatch()
     _test_original_2ad1_original_bit_gate()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
@@ -2039,6 +2041,86 @@ func _test_original_7e5e_early_returns_stage() -> void:
                     "original 7E5E only modifies physical high byte on signed special return")
 
 
+func _test_original_7ea3_event_dispatch() -> void:
+    ## Bounded original 7EA3–7F32 event allocation and course lookup.
+    ## Synthetic data is caller-supplied; original copyrighted ROM
+    ## tables are never embedded in the game or tests.
+    var course_table: PackedByteArray = PackedByteArray()
+    for k in range(280):
+        course_table.append((k * 19 + 3) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(CollisionRetry.LENGTH)
+        ram.fill(0)
+        CollisionRetry._set8(ram, ix + 0x4E, 4)
+        CollisionRetry._set8(ram, ix - 3, 2)
+        CollisionRetry._set8(ram, 0xE699, 3)
+        CollisionRetry._set8(ram, ix + 0x75, 0x34)
+        for slot in range(16):
+            CollisionRetry._set8(ram, 0xE800 + slot * 16, 2)
+            CollisionRetry._set8(ram, 0xE800 + slot * 16 + 1, 100 + slot)
+        CollisionRetry._set8(ram, 0xE860, 0)
+        var before: PackedByteArray = ram.duplicate()
+        var allocated: Dictionary = Event7EA3.apply_from_original_call(
+            ram, ix, course_table)
+        _verify(allocated["branch"] == "allocated_free" and
+                allocated["slot"] == 6 and allocated["next_pc"] == 0x7091 and
+                allocated["complete"] and ram == before,
+                "original 7EA3 free event slot returns to real driving caller")
+        _verify(CollisionRetry.get8(allocated["ram"], ix + 0x64) == 0x60 and
+                CollisionRetry.get8(allocated["ram"], ix + 0x33) & 0x40 != 0,
+                "original 8659 selected L slot offset is stored at IX+64")
+        var entry: int = (3 * 5 + 2) * 4
+        for n in range(4):
+            _verify(CollisionRetry.get8(allocated["ram"], 0xE864 + n) ==
+                    course_table[entry + n],
+                    "original 1767/174E per-car E,D,L,H tuple is preserved")
+        _verify(CollisionRetry.get8(allocated["ram"], 0xE860) == 3 and
+                CollisionRetry.get8(allocated["ram"], 0xE861) == 0xDF and
+                CollisionRetry.get8(allocated["ram"], 0xE862) == 0x33 and
+                CollisionRetry.get8(allocated["ram"], 0xE863) == 0x7F and
+                CollisionRetry.get8(allocated["ram"], 0xE868) == 1 and
+                CollisionRetry.get8(allocated["ram"], 0xE869) == 0x35 and
+                CollisionRetry.get8(allocated["ram"], 0xE86A) == 0x3E and
+                CollisionRetry.get8(allocated["ram"], 0xE86B) == 0xFF and
+                CollisionRetry.get8(allocated["ram"], 0xE86E) == 0 and
+                CollisionRetry.get8(allocated["ram"], 0xE86F) == 2,
+                "original 7EA3 record flags, priority and identity are exact")
+
+        var pending: Dictionary = Event7EA3.apply_from_original_call(
+            ram, ix, PackedByteArray())
+        _verify(pending["branch"] == "course_lookup_pending" and
+                pending["next_pc"] == 0x1767 and not pending["complete"] and
+                CollisionRetry.get8(pending["ram"], 0xE868) == 0,
+                "original 7EA3 stops before missing course data, preserving prewrites")
+        var collision_ram: PackedByteArray = ram.duplicate()
+        CollisionRetry._set8(collision_ram, ix + 0x4E, 0)
+        var collision: Dictionary = Event7EA3.apply_from_original_call(
+            collision_ram, ix, course_table)
+        _verify(collision["branch"] == "external_8022" and
+                collision["next_pc"] == 0x8022 and not collision["complete"],
+                "original 8022 collision side effects are never fabricated")
+        var reuse_ram: PackedByteArray = ram.duplicate()
+        CollisionRetry._set8(reuse_ram, ix + 0x33, 0x80)
+        CollisionRetry._set8(reuse_ram, ix + 0x64, 0xF0)
+        var reused: Dictionary = Event7EA3.apply_from_original_call(
+            reuse_ram, ix, course_table)
+        _verify(reused["branch"] == "reuse_event" and
+                reused["next_pc"] == 0x7091 and reused["slot"] == 15 and
+                CollisionRetry.get8(reused["ram"], 0xE8F2) == 0x39 and
+                CollisionRetry.get8(reused["ram"], 0xE8F8) == 4,
+                "original 7F12 event reuse bypasses allocator and returns")
+        var reject_ram: PackedByteArray = ram.duplicate()
+        for slot in range(16):
+            CollisionRetry._set8(reject_ram, 0xE800 + slot * 16, 2)
+            CollisionRetry._set8(reject_ram, 0xE801 + slot * 16, 0xDF)
+        var rejected: Dictionary = Event7EA3.apply_from_original_call(
+            reject_ram, ix, course_table)
+        _verify(rejected["branch"] == "allocation_rejected" and
+                rejected["next_pc"] == 0x7091 and rejected["slot"] == -1,
+                "original 8659 refuses replacement at equal DF priority")
+
+
 func _test_original_2ad1_original_bit_gate() -> void:
     for index in range(5):
         var ix: int = CollisionRetry.CAR_POINTERS[index]
@@ -2206,14 +2288,14 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                         (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
                         "original 7049 normal branch preserves 75F1 or 1689 termination")
             elif route in ["slow_7e5e", "slow_2ad1"]:
-                var target: int = 0x7EA3 if route == "slow_7e5e" else 0x2AD6
+                var target: int = 0x8022 if route == "slow_7e5e" else 0x2AD6
                 _verify(preflight["next_pc"] == 0x7049 and
                         actual["next_pc"] == target and not actual["complete"] and
                         not actual["scratch_saved"] and
                         actual["original_slow_7049"]["next_pc"] ==
                             (0x7E5E if route == "slow_7e5e" else 0x2AD1) and
                         CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
-                        "original 7049 stops safely at 7EA3 or banked 2AD6 dispatch")
+                        "original 7049 stops at genuine 8022 collision or 2AD6 banked dispatch")
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and
                         actual["original_external_7e5e"]["branch"] == "return_equal" and
