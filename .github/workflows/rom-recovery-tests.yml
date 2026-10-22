@@ -1,0 +1,26 @@
+name: ROM recovery tests
+
+on:
+  push:
+    paths:
+      - "tools/*.py"
+      - "tests/*.py"
+      - ".github/workflows/rom-recovery-tests.yml"
+  pull_request:
+    paths:
+      - "tools/*.py"
+      - "tests/*.py"
+      - ".github/workflows/rom-recovery-tests.yml"
+
+jobs:
+  synthetic-rom-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run local-only synthetic bank and ROM layout tests
+        run: python -m unittest discover -s tests -v

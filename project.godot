@@ -1,0 +1,31 @@
+; Engine configuration file.
+; Indy Carz mobile foundation — original arcade physics port in progress.
+; No finished playable scene is assigned until original vehicle logic is verified.
+
+config_version=5
+
+[application]
+
+config/name="Indy Carz"
+config/description="Mobile-first original-brand overhead arcade racing"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1600
+window/size/window_width_override=360
+window/size/window_height_override=800
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+textures/canvas_textures/default_texture_filter=0
