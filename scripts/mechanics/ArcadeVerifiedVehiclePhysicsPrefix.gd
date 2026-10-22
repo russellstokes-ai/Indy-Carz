@@ -32,6 +32,7 @@ const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
 const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
+const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
@@ -276,7 +277,8 @@ static func run_verified_original_slot_from_7017(
         original_direct_factor: int,
         original_reverse_factor: int,
         steering_control_table_256: PackedByteArray,
-        original_weighting_factor: int) -> Dictionary:
+        original_weighting_factor: int,
+        original_event_course_table: Variant = null) -> Dictionary:
     ## Only an authenticated original 7017 entry may use this method.
     ## It loads the original car record ONCE, runs original CALL 75F2
     ## geometry checkpoint, then original 701A status gate.
@@ -287,7 +289,8 @@ static func run_verified_original_slot_from_7017(
     ## SLOW 7049 now computes genuine Z80 fixed-point decrements and
     ## continues at 709C; the separate bounded 7E5E early-return
     ## verifier may also resume it; 2AD1 now has its original BIT0
-    ## immediate return. 7EA3 and 2AD6 event dispatch remain opaque.
+    ## immediate return. The bounded 7EA3 event allocation/lookup can now
+    ## resume, while 8022 collision effects and 2AD6 remain opaque.
     ## The original 7D65 smoothing branch also authentically returns
     ## to 7024 then skips 7530 via the original JP7572 geometry path.
     assert(master_ram.size() == State.LENGTH)
@@ -328,10 +331,15 @@ static func run_verified_original_slot_from_7017(
             "unverified_downstream": "original post-75F1 collision and callback scheduling"
         }
 
+    var event_table: PackedByteArray = PackedByteArray()
+    if original_event_course_table != null:
+        assert(original_event_course_table is PackedByteArray)
+        event_table = original_event_course_table
     var drive_ram: PackedByteArray = preflight["ram"]
     var inherited_b: int = preflight["b"]
     var slow: Dictionary = {}
     var external: Dictionary = {}
+    var external_event: Dictionary = {}
     var external2: Dictionary = {}
     var pending_pc: int = -1
     if preflight["next_pc"] == Slow7049.ENTRY_PC:
@@ -347,7 +355,16 @@ static func run_verified_original_slot_from_7017(
                 drive_ram,original_ix)
             drive_ram = external["ram"]
             if external["next_pc"] == External7E5E.OPAQUE_DISPATCH_PC:
-                pending_pc = External7E5E.OPAQUE_DISPATCH_PC
+                # 7EA3 sets the real event flags and may allocate/reuse
+                # an original E800 record. Never bypass the unknown 8022
+                # collision service or invent missing course data.
+                external_event = Event7EA3.apply_from_original_call(
+                    drive_ram,original_ix,event_table)
+                drive_ram = external_event["ram"]
+                if external_event["next_pc"] != Event7EA3.NORMAL_CALL_RETURN:
+                    pending_pc = external_event["next_pc"]
+                elif State.get8(drive_ram,original_ix - 3) < 3:
+                    pending_pc = Slow7049.EXTERNAL_2AD1
             else:
                 assert(external["next_pc"] == External7E5E.NORMAL_CALL_RETURN)
                 if State.get8(drive_ram,original_ix - 3) < 3:
@@ -374,9 +391,10 @@ static func run_verified_original_slot_from_7017(
                 "checkpoint_75f2": saved, "preflight_701a": preflight,
                 "original_slow_7049": slow, "original_speed_709c": {},
                 "original_external_7e5e": external,
+                "original_event_7ea3": external_event,
                 "original_external_2ad1": external2,
                 "pending_original_call": "%04X" % pending_pc,
-                "unverified_downstream": "original 7EA3/2AD6 event dispatch side effects"
+                "unverified_downstream": "original 8022/1767/2AD6 event and collision effects"
             }
     else:
         assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
@@ -404,6 +422,7 @@ static func run_verified_original_slot_from_7017(
     result["preflight_701a"] = preflight
     result["original_slow_7049"] = slow
     result["original_external_7e5e"] = external
+    result["original_event_7ea3"] = external_event
     result["original_external_2ad1"] = external2
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
