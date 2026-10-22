@@ -1,0 +1,120 @@
+class_name ArcadeVerifiedVehiclePhysicsPrefix
+extends RefCounted
+
+## BOUNDED, original-compatible arcade Z80 CPU pipeline: master 71C8
+## through the movement and vehicle geometry stage ending at 75F1.
+##
+## All arithmetic stages in this chain were independently verified
+## against the user's original 1991 Indy Heat rev1 Z80 and signed XROM:
+##   71C8–752F input/acceleration/steering routing and angular updates
+##   7530–7571 original trig/XROM coordinate integration
+##   7572–75F0 original eight-word oriented collision footprint
+##
+## The game runs these later stages against SHARED E72B/E735/E76A
+## working RAM, NOT directly against the physical E000+i*100 car record.
+## Original six-slot serializer/callback scheduling is EXTERNAL.
+## Caller must supply actual verified original B/C, ROM factors,
+## E96D lookup, and source car record. Never guess vehicle speed,
+## friction, track barriers, or game update rates.
+##
+## Original Z80 CALL PE,1689 and other incomplete paths fail closed:
+## this helper preserves any proven earlier state without fabricating
+## a full car update. A successful return reaches PC 75F1 (original
+## RET), not the game's entire collision/AI/results processing.
+
+const State = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
+const Chain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
+const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
+
+const ORIGINAL_MOVE_START: int = 0x7530
+const ORIGINAL_FOOTPRINT_START: int = 0x7572
+const ORIGINAL_RETURN_PC: int = 0x75F1
+const SCRATCH_Y: int = 0xE72B
+const SCRATCH_X: int = 0xE735
+const MOTION_HEADING: int = 0xE76A
+const MOTION_BYTE: int = 0xE76C
+const BODY_HEADING: int = 0xE768
+
+
+static func apply_original_7530_to_75f1(master_ram: PackedByteArray) -> Dictionary:
+    ## The previous physics chain MUST have landed at PC7530. There
+    ## is no 60fps time step: these are exactly the original arithmetic
+    ## instructions for ONE invocation of the CPU movement stage.
+    assert(master_ram.size() == State.LENGTH)
+    var x: int = State.get16(master_ram, SCRATCH_X)
+    var y: int = State.get16(master_ram, SCRATCH_Y)
+    var heading: int = State.get8(master_ram, MOTION_HEADING)
+    var signed_motion: int = State.get8(master_ram, MOTION_BYTE)
+    var step: Dictionary = Motion.integrate_center(heading, signed_motion, x, y)
+
+    var updated: PackedByteArray = master_ram.duplicate()
+    State._set16(updated, SCRATCH_X, step["x"])
+    State._set16(updated, SCRATCH_Y, step["y"])
+
+    var footprint: Dictionary = Motion.footprint(
+        State.get8(updated, BODY_HEADING), step["x"], step["y"])
+    for offset in footprint.keys():
+        # ArcadeMotionGeometry returns offsets from original E72B scratch
+        # base. These are NOT physical car+offset addresses.
+        State._set16(updated, SCRATCH_Y + offset, footprint[offset])
+    return {
+        "ram": updated,
+        "movement": step,
+        "footprint": footprint,
+        "integrated": true,
+        "next_pc": ORIGINAL_RETURN_PC
+    }
+
+
+static func apply_original_7572_geometry_only(master_ram: PackedByteArray) -> Dictionary:
+    ## MAME live tracing confirmed that the original CPU may execute
+    ## car-footprint geometry WITHOUT first updating its centre.
+    ## This entry is for a caller which AUTHENTICALLY reached PC7572.
+    assert(master_ram.size() == State.LENGTH)
+    var x: int = State.get16(master_ram, SCRATCH_X)
+    var y: int = State.get16(master_ram, SCRATCH_Y)
+    var footprint: Dictionary = Motion.footprint(
+        State.get8(master_ram, BODY_HEADING),x,y)
+    var updated: PackedByteArray = master_ram.duplicate()
+    for offset in footprint.keys():
+        State._set16(updated, SCRATCH_Y + offset, footprint[offset])
+    return {
+        "ram": updated,
+        "movement": {},
+        "footprint": footprint,
+        "integrated": false,
+        "next_pc": ORIGINAL_RETURN_PC
+    }
+
+
+static func run_verified_prefix(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_b: int,
+        original_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## 71C8 → ... → 752F → 7530 → 75F1, unless the REAL original
+    ## Z80 calls 1689. We never run 7530 on that exceptional route.
+    assert(master_ram.size() == State.LENGTH)
+    var prior: Dictionary = Chain.advance_through_original_steering_decay(
+        master_ram,physical_car,original_ix,original_b,original_c,
+        original_direct_factor,original_reverse_factor,
+        control_table_256,original_weighting_factor)
+    prior["original_movement_7530"] = {}
+    if prior["next_pc"] != ORIGINAL_MOVE_START:
+        assert(prior["next_pc"] == 0x1689)
+        prior["complete"] = false
+        return prior
+
+    var movement: Dictionary = apply_original_7530_to_75f1(prior["ram"])
+    prior["ram"] = movement["ram"]
+    prior["original_movement_7530"] = movement
+    prior["next_pc"] = ORIGINAL_RETURN_PC
+    prior["complete"] = true
+    prior["verified_prefix_complete"] = true
+    prior["unverified_downstream"] = "original Z80 75F1 RET, six-slot callback scheduling, car and terrain collisions"
+    return prior
