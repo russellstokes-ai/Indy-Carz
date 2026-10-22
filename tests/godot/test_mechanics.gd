@@ -2097,9 +2097,27 @@ func _test_original_7ea3_event_dispatch() -> void:
         CollisionRetry._set8(collision_ram, ix + 0x4E, 0)
         var collision: Dictionary = Event7EA3.apply_from_original_call(
             collision_ram, ix, course_table)
-        _verify(collision["branch"] == "external_8022" and
-                collision["next_pc"] == 0x8022 and not collision["complete"],
-                "original 8022 collision side effects are never fabricated")
+        _verify(collision["branch"] == "collision_0985_pending" and
+                collision["next_pc"] == 0x0985 and not collision["complete"] and
+                collision["collision_gate"] == "pending_0985" and
+                CollisionRetry.get8(collision["ram"], ix + 0x4E) == 1,
+                "original 8022→0971 stops at unresolved 0985 banked transfer")
+        for gate in ["return_status", "return_car_id", "return_secondary"]:
+            var gate_ram: PackedByteArray = ram.duplicate()
+            CollisionRetry._set8(gate_ram, ix + 0x4E, 0)
+            CollisionRetry._set8(gate_ram, ix + 0x31,
+                1 if gate == "return_status" else 0)
+            CollisionRetry._set8(gate_ram, ix - 3,
+                4 if gate == "return_car_id" else 2)
+            CollisionRetry._set8(gate_ram, ix + 0x23,
+                1 if gate == "return_secondary" else 0)
+            var gated: Dictionary = Event7EA3.apply_from_original_call(
+                gate_ram, ix, course_table)
+            _verify(gated["collision_gate"] == gate and
+                    gated["next_pc"] == 0x7091 and gated["complete"] and
+                    CollisionRetry.get8(gated["ram"], ix + 0x4E) ==
+                        (0 if gate == "return_status" else 1),
+                    "original 0971 three genuine early returns resume event allocation")
         var reuse_ram: PackedByteArray = ram.duplicate()
         CollisionRetry._set8(reuse_ram, ix + 0x33, 0x80)
         CollisionRetry._set8(reuse_ram, ix + 0x64, 0xF0)
@@ -2288,14 +2306,14 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                         (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
                         "original 7049 normal branch preserves 75F1 or 1689 termination")
             elif route in ["slow_7e5e", "slow_2ad1"]:
-                var target: int = 0x8022 if route == "slow_7e5e" else 0x2AD6
+                var target: int = 0x1767 if route == "slow_7e5e" else 0x2AD6
                 _verify(preflight["next_pc"] == 0x7049 and
                         actual["next_pc"] == target and not actual["complete"] and
                         not actual["scratch_saved"] and
                         actual["original_slow_7049"]["next_pc"] ==
                             (0x7E5E if route == "slow_7e5e" else 0x2AD1) and
                         CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
-                        "original 7049 stops at genuine 8022 collision or 2AD6 banked dispatch")
+                        "original 7049 follows 0971 early return and stops at 1767 or 2AD6")
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and
                         actual["original_external_7e5e"]["branch"] == "return_equal" and
