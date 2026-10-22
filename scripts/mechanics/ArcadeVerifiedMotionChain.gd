@@ -18,6 +18,7 @@ const Entry = preload("res://scripts/mechanics/ArcadeDriveEntryGate.gd")
 const Correction = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.gd")
 const Angular = preload("res://scripts/mechanics/ArcadeDriveAngularUpdate.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
+const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
@@ -490,3 +491,53 @@ static func advance_through_original_steering_decay(
     previous["verified_prefix_complete"] = true
     previous["unverified_downstream"] = "original per-car 7530+ geometry and collision scheduling"
     return previous
+
+
+
+static func advance_using_verified_714e_selector(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_table_257: PackedByteArray,
+        inherited_carry: int,
+        inherited_b: int,
+        inherited_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        steering_control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## The 714E stage is the original source of B/C consumed by the
+    ## 71C8 driving and 7315 steering stages.
+    ##
+    ## The table is 257 authentic bytes starting from the original
+    ## E96B CPU pointer, NOT original ROM code copied into the app.
+    ## The 7148 carry flag is a genuine prior-state input, not zero.
+    ##
+    ## A 714E -> 7315 bypass MUST SKIP all of 71C8–7314; this helper
+    ## preserves that original branch and stops at 7315 instead of
+    ## erroneously running acceleration. Remaining 7315 steering can
+    ## be handled separately by the corresponding verified stage.
+    assert(master_ram.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    var selected: Dictionary = DriveBC.select_from_original_state(
+        master_ram, physical_car, original_table_257,
+        inherited_b, inherited_c, inherited_carry)
+    if selected["next_pc"] == 0x7315:
+        return {
+            "complete": false,
+            "verified_prefix_complete": true,
+            "original_714e_bypass": true,
+            "next_pc": 0x7315,
+            "ram": master_ram.duplicate(),
+            "bc_selection": selected,
+            "unverified_downstream": "original 7315 onward needs separate steering stage"
+        }
+    assert(selected["next_pc"] == 0x71C8)
+    var continuation: Dictionary = advance_through_original_steering_decay(
+        master_ram, physical_car, original_ix,
+        selected["b"], selected["c"],
+        original_direct_factor, original_reverse_factor,
+        steering_control_table_256, original_weighting_factor)
+    continuation["bc_selection"] = selected
+    continuation["original_714e_bypass"] = false
+    return continuation
