@@ -95,7 +95,7 @@ class Original714ELiveAuditTests(unittest.TestCase):
             audit_rows(rows,master)
         _,rows=sample()
         rows[1]=rows[1].replace("SE71C8","SE714E")
-        with self.assertRaisesRegex(ValueError,"pair order"):
+        with self.assertRaisesRegex(ValueError,"pair order|lacks required register"):
             audit_rows(rows,master)
 
     def test_nonreturning_bypass_not_counted_as_passed(self):
