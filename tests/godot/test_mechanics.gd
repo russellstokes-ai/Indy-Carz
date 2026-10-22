@@ -24,6 +24,7 @@ const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter
 const SecondProjection = preload("res://scripts/mechanics/ArcadeSteeringSecondProjection.gd")
 const SteeringDecay = preload("res://scripts/mechanics/ArcadeSteeringDecay.gd")
 const PhysicsPrefix = preload("res://scripts/mechanics/ArcadeVerifiedVehiclePhysicsPrefix.gd")
+const ScratchSerializer = preload("res://scripts/mechanics/ArcadeScratchSerializer.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -61,6 +62,7 @@ func _initialize() -> void:
     _test_original_steering_7442_7463()
     _test_original_steering_7499_74d8()
     _test_original_vehicle_physics_prefix()
+    _test_original_scratch_serializer_and_car_state()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1407,6 +1409,99 @@ func _test_original_vehicle_physics_prefix() -> void:
                     "complete bounded original driving prefix does not mutate inputs")
             _verify(driven["unverified_downstream"].contains("callback"),
                     "full vehicle callback/terrain scheduler remains an explicit boundary")
+
+
+func _test_original_scratch_serializer_and_car_state() -> void:
+    ## Exact original 48-word load/store-back copy and the SIX original
+    ## records including auxiliary E500. Only five are racing cars.
+    var seed: PackedByteArray = PackedByteArray()
+    seed.resize(0x2000)
+    seed.fill(0x52)
+    for i in range(ScratchSerializer.SLOT_STARTS.size()):
+        var slot: int = ScratchSerializer.SLOT_STARTS[i]
+        var state: PackedByteArray = seed.duplicate()
+        for j in range(96):
+            state[slot - 0xE000 + j] = (j * 7 + i) & 255
+        state[slot - 0xE000 + 0xD7] = 0xBA
+        var before: PackedByteArray = state.duplicate()
+        var loaded: PackedByteArray = ScratchSerializer.load_slot_to_scratch(state,slot)
+        for n in range(96):
+            _verify(loaded[0xE72B - 0xE000 + n] ==
+                    state[slot - 0xE000 + n],
+                    "original 48-word POP maps all 96 bytes into E72B scratch")
+        _verify(loaded[slot - 0xE000 + 0xD7] == 0xBA and
+                state == before,
+                "original scratch LOAD preserves physical high state and caller RAM")
+
+        for n in range(96):
+            loaded[0xE72B - 0xE000 + n] = (n * 11 + i + 1) & 255
+        var restored: PackedByteArray = ScratchSerializer.save_scratch_to_slot(
+            loaded,slot)
+        for n in range(96):
+            _verify(restored[slot - 0xE000 + n] ==
+                    loaded[0xE72B - 0xE000 + n],
+                    "original reverse 48 PUSH words restore physical low slot")
+        _verify(restored[slot - 0xE000 + 0xD7] == 0xBA and
+                restored[slot - 0xE000 + 0x60] == 0x52,
+                "original scratch serializer NEVER overwrites upper 160 slot bytes")
+        _verify(ScratchSerializer.physical_slot_for_ix(slot + 0x80) == slot,
+                "original Z80 IX remains 0x80 into six physical record slots")
+
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+
+    # The original arithmetic prefix is now exercised between the same
+    # master 61CE/629A scratch transfers the arcade uses. B/C/ROM
+    # factors are caller-supplied; this is not a claim that all original
+    # CALL 601E effects and track collisions have been recovered.
+    for ix in CollisionRetry.CAR_POINTERS:
+        var slot: int = ScratchSerializer.physical_slot_for_ix(ix)
+        for low_branch in [false,true]:
+            var original_ram: PackedByteArray = PackedByteArray()
+            original_ram.resize(0x2000)
+            original_ram.fill(0)
+            # Physical low 96 bytes are the source of E72B..E78A.
+            CollisionRetry._set16(original_ram,slot + 0x00,0xB000) # E72B Y
+            CollisionRetry._set16(original_ram,slot + 0x0A,0x1000) # E735 X
+            CollisionRetry._set16(original_ram,slot + 0x3C,0x2400) # E767
+            CollisionRetry._set16(original_ram,slot + 0x3E,0x4000) # E769/E76A
+            CollisionRetry._set16(original_ram,slot + 0x40,0x3F00) # E76B/E76C
+            CollisionRetry._set16(original_ram,slot + 0x46,
+                0x00FF if low_branch else 0x0100) # E771
+            CollisionRetry._set16(original_ram,slot + 0x48,0x0200) # E773
+            CollisionRetry._set16(original_ram,slot + 0x5E,0x0800) # E789
+            original_ram[ix + 0x57 - 0xE000] = 16       # pedal IX+57
+            original_ram[ix + 0x70 - 0xE000] = 130
+            original_ram[ix + 0x71 - 0xE000] = 21
+            original_ram[ix - 1 - 0xE000] = 255
+            original_ram[ix + 0x79 - 0xE000] = 0x80
+            original_ram[ix + 0x31 - 0xE000] = 0
+            original_ram[ix + 0x41 - 0xE000] = 1
+            original_ram[ix + 0x00 - 0xE000] = 0xC1
+            original_ram[slot - 0xE000 + 0x63] = 0xAB
+            original_ram[0xE600 - 0xE000] = 0xA6
+            var previous: PackedByteArray = original_ram.duplicate()
+
+            var complete: Dictionary = PhysicsPrefix.run_verified_original_slot_stage(
+                original_ram,ix,0,0,0,0,table,255)
+            _verify(complete["scratch_loaded"] and
+                    complete["scratch_saved"] and complete["complete"] and
+                    complete["next_pc"] == 0x75F1,
+                    "original 48-word load → verified physics → 48-word save path")
+            var changed: PackedByteArray = complete["ram"]
+            for n in range(96):
+                _verify(changed[slot - 0xE000 + n] ==
+                        changed[0xE72B - 0xE000 + n],
+                        "updated original per-car motion state persisted in physical slot")
+            _verify(changed[ix + 0x57 - 0xE000] == 16 and
+                    changed[slot - 0xE000 + 0x63] == 0xAB,
+                    "original input/status bytes beyond first 96 preserved")
+            _verify(changed[0xE600 - 0xE000] == 0xA6 and
+                    original_ram == previous,
+                    "original bounded slot model preserves unrelated working RAM and caller input")
+            _verify(complete["physical_slot"] == slot,
+                    "original selected IX maps the correct physical racing record")
 
 
 func _test_portrait_camera() -> void:
