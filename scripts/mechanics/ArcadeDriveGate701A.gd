@@ -5,9 +5,9 @@ extends RefCounted
 ## Private original-instruction parity against independent branch arithmetic:
 ## 100,000 cases, zero mismatches across all three original exits.
 ##
-## Only the route to 709C is currently connected downstream.
-## Original 7049 is not yet recovered; external 7D4C is NOT called,
-## and any subsequent JP 7572 is NOT fabricated on that branch.
+## This module ONLY models the 701A–7048 gate. Its 7049 and 7D4C
+## exits are now separately recovered and composed by the surrounding
+## ArcadeVerifiedVehiclePhysicsPrefix; no external CALL is fabricated.
 ## Original IX +/- offsets are addresses in persistent car RAM.
 
 const State = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
@@ -50,10 +50,12 @@ static func apply_after_75f2(master_ram: PackedByteArray, original_ix: int) -> D
         }
 
     # Original 7045 LD (IX-1D),00 then continue at 7049.
-    # The real 7049–709B calls and X-ROM transformations remain open.
+    # The caller applies separately verified 7049–709B arithmetic; its
+    # external calls 7E5E and 2AD1 still stop before unknown effects.
     State._set8(out,counter_address,0)
     return {
         "ram": out, "branch": "slow_7049", "next_pc": SLOW_PC,
         "counter": 0, "b": source_b, "complete": false,
-        "unverified_continuation": "original 7049–709B"
+        "unverified_continuation": "original 7049–709B",
+        "continuation": "original recovered 7049–709B (possible external 7E5E/2AD1)"
     }

@@ -30,8 +30,10 @@ const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
+const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
+const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 
 const ORIGINAL_MOVE_START: int = 0x7530
 const ORIGINAL_FOOTPRINT_START: int = 0x7572
@@ -280,7 +282,10 @@ static func run_verified_original_slot_from_7017(
     ## FAST 7036->709C branch resumes the fully proven per-car chain.
     ## SPECIAL 7D4C BIT1 direct-centre route returns at 7024 and genuinely
     ## JP7572, skipping speed integration but updating the footprint.
-    ## SLOW 7049 and 7D65 smoothing paths stop before unknown effects.
+    ## SLOW 7049 now computes genuine Z80 fixed-point decrements and
+    ## continues at 709C, or stops before original 7E5E/2AD1 CALLs.
+    ## The original 7D65 smoothing branch also authentically returns
+    ## to 7024 then skips 7530 via the original JP7572 geometry path.
     assert(master_ram.size() == State.LENGTH)
     assert(State.CAR_POINTERS.has(original_ix))
     var physical_slot: int = Serializer.physical_slot_for_ix(original_ix)
@@ -291,21 +296,19 @@ static func run_verified_original_slot_from_7017(
     if preflight["next_pc"] == Gate701A.OPAQUE_CALL_PC:
         var special: Dictionary = Special7D4C.apply_from_original_call(
             preflight["ram"],original_ix)
+        var special_ram: PackedByteArray = special["ram"]
+        var smoothing: Dictionary = {}
         if special["next_pc"] == Special7D4C.UNRESOLVED_PC:
-            return {
-                "ram": special["ram"], "complete": false,
-                "next_pc": Special7D4C.UNRESOLVED_PC,
-                "physical_slot": physical_slot,
-                "scratch_loaded": true, "scratch_saved": false,
-                "checkpoint_75f2": saved, "preflight_701a": preflight,
-                "original_special_7d4c": special, "original_speed_709c": {},
-                "unverified_downstream": "original 7D65–7E35 smoothing"
-            }
-
-        assert(special["next_pc"] == Special7D4C.NORMAL_CALL_RETURN)
+            smoothing = Smooth7D65.apply_after_original_7d4c(
+                special_ram,original_ix)
+            assert(smoothing["next_pc"] == Special7D4C.NORMAL_CALL_RETURN)
+            special_ram = smoothing["ram"]
+        else:
+            assert(special["next_pc"] == Special7D4C.NORMAL_CALL_RETURN)
         # Real return to 7024 executes JP7572. The original directly
-        # updates footprint geometry here, WITHOUT 709C–7530 speed motion.
-        var footprint: Dictionary = apply_original_7572_geometry_only(special["ram"])
+        # updates footprint geometry here, WITHOUT 709C–7530 speed motion;
+        # the longer branch has ALREADY updated genuine E765/E76B.
+        var footprint: Dictionary = apply_original_7572_geometry_only(special_ram)
         var completed_ram: PackedByteArray = Serializer.save_scratch_to_slot(
             footprint["ram"],physical_slot)
         return {
@@ -314,30 +317,43 @@ static func run_verified_original_slot_from_7017(
             "scratch_loaded": true, "scratch_saved": true,
             "verified_prefix_complete": true,
             "checkpoint_75f2": saved, "preflight_701a": preflight,
-            "original_special_7d4c": special, "original_speed_709c": {},
+            "original_special_7d4c": special,
+            "original_smoothing_7d65": smoothing,
+            "original_speed_709c": {},
             "original_movement_7530": footprint,
             "unverified_downstream": "original post-75F1 collision and callback scheduling"
         }
 
-    if preflight["next_pc"] != Speed709C.ENTRY_PC:
-        assert(preflight["next_pc"] == Gate701A.SLOW_PC)
-        return {
-            "ram": preflight["ram"], "complete": false,
-            "next_pc": preflight["next_pc"], "physical_slot": physical_slot,
-            "scratch_loaded": true, "scratch_saved": false,
-            "checkpoint_75f2": saved, "preflight_701a": preflight,
-            "original_speed_709c": {},
-            "unverified_downstream": "original 7049–709B control update"
-        }
+    var drive_ram: PackedByteArray = preflight["ram"]
+    var inherited_b: int = preflight["b"]
+    var slow: Dictionary = {}
+    if preflight["next_pc"] == Slow7049.ENTRY_PC:
+        slow = Slow7049.apply_from_original_7049(
+            drive_ram,original_ix,inherited_b)
+        drive_ram = slow["ram"]
+        inherited_b = slow["b"]
+        if slow["next_pc"] != Speed709C.ENTRY_PC:
+            assert(slow["next_pc"] in [Slow7049.EXTERNAL_7E5E,Slow7049.EXTERNAL_2AD1])
+            return {
+                "ram": drive_ram, "complete": false,
+                "next_pc": slow["next_pc"], "physical_slot": physical_slot,
+                "scratch_loaded": true, "scratch_saved": false,
+                "checkpoint_75f2": saved, "preflight_701a": preflight,
+                "original_slow_7049": slow, "original_speed_709c": {},
+                "pending_original_call": slow["branch"],
+                "unverified_downstream": "original 7E5E or 2AD1 side effects"
+            }
+    else:
+        assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
 
     # Original IX-1D may have been incremented by the 7036 branch.
     # Construct this original physical car view AFTER that write.
-    var physical_bytes: PackedByteArray = preflight["ram"].slice(
+    var physical_bytes: PackedByteArray = drive_ram.slice(
         physical_slot - State.BASE,
         physical_slot - State.BASE + Serializer.ORIGINAL_SLOT_LENGTH)
     var original_car: ArcadeCarRecord = Car.new(physical_bytes)
     var speed: Dictionary = Speed709C.apply_original_709c(
-        preflight["ram"],original_car,preflight["b"],original_rom_2000_table_256)
+        drive_ram,original_car,inherited_b,original_rom_2000_table_256)
     var real_projection: Dictionary = Carry7124.calculate(
         State.get8(speed["ram"],Carry7124.HEADING),
         State.get16(speed["ram"],Carry7124.ANGULAR_WORD),
@@ -351,6 +367,7 @@ static func run_verified_original_slot_from_7017(
         steering_control_table_256,original_weighting_factor)
     result["checkpoint_75f2"] = saved
     result["preflight_701a"] = preflight
+    result["original_slow_7049"] = slow
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]

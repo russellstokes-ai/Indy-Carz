@@ -20,7 +20,9 @@ const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const DriveCarry = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
+const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
+const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
@@ -81,6 +83,8 @@ func _run_checks() -> void:
     _test_original_7124_carry_and_714e_pipeline()
     _test_original_709c_speed_stage()
     _test_original_709c_to_per_car_slot()
+    _test_original_7049_slow_stage()
+    _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
     _test_original_slot_carry_selected_driving_pipeline()
@@ -1954,6 +1958,86 @@ func _test_original_709c_to_per_car_slot() -> void:
                         "original 1689 escape stops without fabricating a slot save")
 
 
+func _test_original_7049_slow_stage() -> void:
+    for index in range(5):
+        var ix: int = CollisionRetry.CAR_POINTERS[index]
+        for route in ["no_borrow", "borrow", "bit4", "external_7e5e", "external_2ad1"]:
+            var ram: PackedByteArray = PackedByteArray()
+            ram.resize(CollisionRetry.LENGTH)
+            ram.fill(0)
+            var borrow: bool = route != "no_borrow"
+            var source_b: int = 255 if borrow else 0
+            CollisionRetry._set16(ram,0xE765,0x7FFF if borrow else 0)
+            CollisionRetry._set8(ram,ix + 0x3B,255)
+            CollisionRetry._set8(ram,ix + 0x39,0 if borrow else 201)
+            CollisionRetry._set8(ram,ix + 0x3A,
+                1 if route == "bit4" else (3 if route.begins_with("external") else 7))
+            CollisionRetry._set8(ram,ix + 0x31,0x81 if route == "bit4" else 0)
+            CollisionRetry._set8(ram,ix - 3,2 if route == "external_2ad1" else 3)
+            CollisionRetry._set8(ram,0xE94D,3 if route == "external_7e5e" else 0)
+            var snapshot: PackedByteArray = ram.duplicate()
+            var result: Dictionary = Slow7049.apply_from_original_7049(ram,ix,source_b)
+            _verify(snapshot == ram and result["b"] == source_b and
+                    result["subtrahend"] == (157 if borrow else 16),
+                    "original 7049 stage has immutable inputs and authentic X-ROM LOW")
+            _verify(CollisionRetry.get8(result["ram"],ix + 0x39) ==
+                    (99 if borrow else 185),
+                    "original 7049 writes the original IX+39 decrement")
+            if route == "no_borrow":
+                _verify(result["next_pc"] == 0x709C and result["complete"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x3A) == 7,
+                        "original 7049 no-borrow continues at 709C")
+            elif route == "borrow":
+                _verify(result["next_pc"] == 0x709C and result["complete"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x3A) == 6,
+                        "original 7049 normal borrow adjusts high byte and continues")
+            elif route == "bit4":
+                _verify(result["next_pc"] == 0x709C and result["complete"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x3A) == 0 and
+                        CollisionRetry.get8(result["ram"],ix + 0x31) == 0x91,
+                        "original 7049 zero high byte sets physical-car status bit")
+            elif route == "external_7e5e":
+                _verify(result["next_pc"] == 0x7E5E and not result["complete"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x3A) == 2,
+                        "original 7049 stops before unknown 7E5E call")
+            else:
+                _verify(result["next_pc"] == 0x2AD1 and not result["complete"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x3A) == 2,
+                        "original 7049 stops before unknown 2AD1 call")
+
+
+func _test_original_7d65_smoothing_stage() -> void:
+    for index in range(5):
+        var ix: int = CollisionRetry.CAR_POINTERS[index]
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(CollisionRetry.LENGTH)
+        ram.fill(0)
+        CollisionRetry._set16(ram,ix + 0x65,0x1010)
+        CollisionRetry._set16(ram,ix + 0x67,0x1FF0)
+        CollisionRetry._set16(ram,0xE72B,0x1000)
+        CollisionRetry._set16(ram,0xE735,0x2000)
+        CollisionRetry._set8(ram,0xE93B,0x20)
+        CollisionRetry._set16(ram,0xE767,0x1000)
+        CollisionRetry._set16(ram,0xE769,0x9999)
+        CollisionRetry._set16(ram,0xE76B,0x0200)
+        CollisionRetry._set16(ram,0xE765,0x1000)
+        var before: PackedByteArray = ram.duplicate()
+        var result: Dictionary = Smooth7D65.apply_after_original_7d4c(ram,ix)
+        var updated: PackedByteArray = result["ram"]
+        _verify(ram == before and result["branch"] == "smooth_7024" and
+                result["next_pc"] == 0x7024 and result["complete"],
+                "original 7D65 complete smoothing returns to actual 7024 without mutating caller")
+        _verify(CollisionRetry.get16(updated,0xE72B) == 0x1002 and
+                CollisionRetry.get16(updated,0xE735) == 0x1FFE,
+                "original 7D65 signed Y/X interpolation uses original integer rounding")
+        _verify(CollisionRetry.get16(updated,0xE767) == 0x1180 and
+                CollisionRetry.get16(updated,0xE769) == 0x1180,
+                "original 7D65 writes equal heading words with 12/128 projection")
+        _verify(CollisionRetry.get16(updated,0xE76B) == 0x01D0 and
+                CollisionRetry.get16(updated,0xE765) == 0x0E80,
+                "original 7D65 independently decays both movement and speed words")
+
+
 func _test_original_701a_gate_and_7017_fast_path() -> void:
     var speed_table: PackedByteArray = PackedByteArray()
     speed_table.resize(256)
@@ -1970,7 +2054,7 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
     for index in range(5):
         var ix: int = CollisionRetry.CAR_POINTERS[index]
         var slot: int = ScratchSerializer.physical_slot_for_ix(ix)
-        for route in ["fast", "slow", "special", "special_direct"]:
+        for route in ["fast", "slow", "slow_7e5e", "slow_2ad1", "special", "special_direct"]:
             var ram: PackedByteArray = PackedByteArray()
             ram.resize(CollisionRetry.LENGTH)
             ram.fill(0)
@@ -1989,6 +2073,13 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
             CollisionRetry._set8(ram,slot + 0xEF,3)
             CollisionRetry._set16(ram,ix + 0x65,0x1122 + index * 7)
             CollisionRetry._set16(ram,ix + 0x67,0x3344 + index * 11)
+            if route.begins_with("slow_"):
+                CollisionRetry._set16(ram,slot + 0x3A,0x7FFF)
+                CollisionRetry._set8(ram,ix + 0x3B,255)
+                CollisionRetry._set8(ram,ix + 0x39,0)
+                CollisionRetry._set8(ram,ix + 0x3A,3)
+                CollisionRetry._set8(ram,ix - 3,2 if route == "slow_2ad1" else 3)
+                CollisionRetry._set8(ram,0xE94D,3 if route == "slow_7e5e" else 0)
             var original: PackedByteArray = ram.duplicate()
             var prepared: PackedByteArray = ScratchSerializer.load_slot_to_scratch(ram,slot)
             var checkpoint: Dictionary = CollisionCheckpoint.snapshot(prepared)
@@ -2027,15 +2118,48 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                     _verify(actual["next_pc"] == 0x1689 and not actual["scratch_saved"],
                             "original 7017 branch preserves nonlocal 1689 escape")
             elif route == "slow":
-                _verify(actual["next_pc"] == 0x7049 and not actual["complete"] and
-                        not actual["scratch_saved"] and
+                var original_slow: Dictionary = Slow7049.apply_from_original_7049(
+                    preflight["ram"],ix,preflight["b"])
+                _verify(preflight["next_pc"] == 0x7049 and
+                        original_slow["next_pc"] == 0x709C and
+                        actual["original_slow_7049"]["next_pc"] == 0x709C and
                         CollisionRetry.get8(actual["ram"],ix - 0x1D) == 0,
-                        "original 701A slow throttle path stops at unresolved 7049")
-            elif route == "special":
-                _verify(actual["next_pc"] == 0x7D65 and not actual["complete"] and
+                        "original 701A slow route reaches genuine 7049 arithmetic and 709C")
+                var slower_car_bytes: PackedByteArray = original_slow["ram"].slice(
+                    slot - CollisionRetry.BASE,
+                    slot - CollisionRetry.BASE + ScratchSerializer.ORIGINAL_SLOT_LENGTH)
+                var slower_car: ArcadeCarRecord = Car.new(slower_car_bytes)
+                var slower_speed: Dictionary = Speed709C.apply_original_709c(
+                    original_slow["ram"],slower_car,original_slow["b"],speed_table)
+                _verify(actual["original_speed_709c"]["e765"] == slower_speed["e765"],
+                        "original 7049 slow path sends inherited B into verified 709C speed")
+                _verify(actual["next_pc"] in [0x75F1,0x1689] and
+                        (actual["scratch_saved"] == (actual["next_pc"] == 0x75F1)),
+                        "original 7049 normal branch preserves 75F1 or 1689 termination")
+            elif route.begins_with("slow_"):
+                var target: int = 0x7E5E if route == "slow_7e5e" else 0x2AD1
+                _verify(preflight["next_pc"] == 0x7049 and
+                        actual["next_pc"] == target and not actual["complete"] and
                         not actual["scratch_saved"] and
-                        CollisionRetry.get8(actual["ram"],ix - 0x1D) == 0xA7,
-                        "original 7D4C slow smoothing stops at unverified 7D65")
+                        actual["original_slow_7049"]["next_pc"] == target and
+                        CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
+                        "original 7049 stops safely at unknown external call")
+            elif route == "special":
+                var intermediate: Dictionary = Special7D4C.apply_from_original_call(
+                    preflight["ram"],ix)
+                var smoothed: Dictionary = Smooth7D65.apply_after_original_7d4c(
+                    intermediate["ram"],ix)
+                var smooth_geom: Dictionary = PhysicsPrefix.apply_original_7572_geometry_only(
+                    smoothed["ram"])
+                var expected_smooth_ram: PackedByteArray = ScratchSerializer.save_scratch_to_slot(
+                    smooth_geom["ram"],slot)
+                _verify(intermediate["next_pc"] == 0x7D65 and
+                        smoothed["next_pc"] == 0x7024 and
+                        actual["original_smoothing_7d65"]["e765"] == smoothed["e765"] and
+                        actual["original_speed_709c"].is_empty() and
+                        actual["next_pc"] == 0x75F1 and actual["complete"] and
+                        actual["scratch_saved"] and actual["ram"] == expected_smooth_ram,
+                        "original 7D4C smoothing branch returns via 7024/7572 without 709C")
             else:
                 var direct: Dictionary = Special7D4C.apply_from_original_call(
                     preflight["ram"],ix)

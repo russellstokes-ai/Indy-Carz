@@ -6,8 +6,9 @@ extends RefCounted
 ##
 ## This helper is entered ONLY by an authentic CALL 7D4C. BIT1 of
 ## original IX+5C selects the short Y/X override and RET to 7024.
-## Otherwise it stops at the genuine unresolved slow path PC7D65.
-## It NEVER fabricates the rest of 7D65–7E35 or any collision effects.
+## Otherwise this bounded SHORT module stops at the genuine PC7D65.
+## The wrapper invokes separately recovered ArcadeDriveSmooth7D65,
+## never fabricating intermediate work inside this 7D4C–7D64 stage.
 
 const State = preload("res://scripts/mechanics/ArcadeCollisionRetry.gd")
 
@@ -28,7 +29,8 @@ static func apply_from_original_call(master_ram: PackedByteArray,
         return {
             "ram": out, "branch": "slow_7d65", "next_pc": UNRESOLVED_PC,
             "y": old_y, "x": old_x, "complete": false,
-            "unverified_continuation": "original 7D65–7E35 smoothing"
+            "unverified_continuation": "original 7D65–7E35 smoothing",
+            "continuation": "original separately recovered 7D65–7E35 smoothing"
         }
 
     # Original LD H,(IX+66); LD L,(IX+65); LD (E72B),HL;
