@@ -31,6 +31,7 @@ const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
 const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
+const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -283,7 +284,8 @@ static func run_verified_original_slot_from_7017(
     ## SPECIAL 7D4C BIT1 direct-centre route returns at 7024 and genuinely
     ## JP7572, skipping speed integration but updating the footprint.
     ## SLOW 7049 now computes genuine Z80 fixed-point decrements and
-    ## continues at 709C, or stops before original 7E5E/2AD1 CALLs.
+    ## continues at 709C; the separate bounded 7E5E early-return
+    ## verifier may also resume it, while 7EA3/2AD1 remain opaque.
     ## The original 7D65 smoothing branch also authentically returns
     ## to 7024 then skips 7530 via the original JP7572 geometry path.
     assert(master_ram.size() == State.LENGTH)
@@ -327,21 +329,40 @@ static func run_verified_original_slot_from_7017(
     var drive_ram: PackedByteArray = preflight["ram"]
     var inherited_b: int = preflight["b"]
     var slow: Dictionary = {}
+    var external: Dictionary = {}
+    var pending_pc: int = -1
     if preflight["next_pc"] == Slow7049.ENTRY_PC:
         slow = Slow7049.apply_from_original_7049(
             drive_ram,original_ix,inherited_b)
         drive_ram = slow["ram"]
         inherited_b = slow["b"]
-        if slow["next_pc"] != Speed709C.ENTRY_PC:
-            assert(slow["next_pc"] in [Slow7049.EXTERNAL_7E5E,Slow7049.EXTERNAL_2AD1])
+        if slow["next_pc"] == External7E5E.ENTRY_PC:
+            # Original 708D PUSH BC; 708E CALL 7E5E. For a real
+            # early return, 7091 POP BC restores inherited B before
+            # the genuine 7092 IX-03 gate (possibly CALL 2AD1).
+            external = External7E5E.apply_from_original_call(
+                drive_ram,original_ix)
+            drive_ram = external["ram"]
+            if external["next_pc"] == External7E5E.OPAQUE_DISPATCH_PC:
+                pending_pc = External7E5E.OPAQUE_DISPATCH_PC
+            else:
+                assert(external["next_pc"] == External7E5E.NORMAL_CALL_RETURN)
+                if State.get8(drive_ram,original_ix - 3) < 3:
+                    pending_pc = Slow7049.EXTERNAL_2AD1
+        elif slow["next_pc"] == Slow7049.EXTERNAL_2AD1:
+            pending_pc = Slow7049.EXTERNAL_2AD1
+        else:
+            assert(slow["next_pc"] == Speed709C.ENTRY_PC)
+        if pending_pc != -1:
             return {
                 "ram": drive_ram, "complete": false,
-                "next_pc": slow["next_pc"], "physical_slot": physical_slot,
+                "next_pc": pending_pc, "physical_slot": physical_slot,
                 "scratch_loaded": true, "scratch_saved": false,
                 "checkpoint_75f2": saved, "preflight_701a": preflight,
                 "original_slow_7049": slow, "original_speed_709c": {},
-                "pending_original_call": slow["branch"],
-                "unverified_downstream": "original 7E5E or 2AD1 side effects"
+                "original_external_7e5e": external,
+                "pending_original_call": "%04X" % pending_pc,
+                "unverified_downstream": "original 7EA3 event dispatch or 2AD1 side effects"
             }
     else:
         assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
@@ -368,6 +389,7 @@ static func run_verified_original_slot_from_7017(
     result["checkpoint_75f2"] = saved
     result["preflight_701a"] = preflight
     result["original_slow_7049"] = slow
+    result["original_external_7e5e"] = external
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]

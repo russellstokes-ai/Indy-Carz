@@ -11,12 +11,12 @@
 | Authentic exit | Cases | Handling |
 | --- | ---: | --- |
 | `709C` | 93,584 | Continue with preserved original B into verified speed/movement pipeline |
-| Conditional `CALL 7E5E` | 6,334 | Preserve already-proven `IX+39/3A/31` writes; stop BEFORE external call effects |
+| Conditional `CALL 7E5E` | 6,334 | Preserve proven `IX+39/3A/31` writes; an independently recovered **bounded early-return gate** may now resume execution, or stop at its `7EA3` event dispatch |
 | Conditional `CALL 2AD1` | 82 | Preserve already-proven writes; stop BEFORE external call effects |
 
 The stage uses the original E765 doubled-high byte, two nested *unsigned X-ROM slot1 LOW* products, original `SRL/ADC` carry, saturating `B+0x80` helper, an indexed IX+3B X-ROM product, and the exact borrow/status-bit and external-call gates. **The unknown X-ROM slot1 HIGH is not used:** each high-byte read is overwritten or abandoned before arithmetic. No original clock rate, tyre friction, collision side effect, or guessed external return has been introduced.
 
-Godot: `ArcadeDriveSlow7049.gd`, integrated into `ArcadeVerifiedVehiclePhysicsPrefix.run_verified_original_slot_from_7017` after the original `75F2→701A` slow gate.
+Godot: `ArcadeDriveSlow7049.gd`, integrated into `ArcadeVerifiedVehiclePhysicsPrefix.run_verified_original_slot_from_7017` after the original `75F2→701A` slow gate. See the additional [7E5E early-return recovery](ARCADE_DRIVING_7E5E_EARLY_RETURNS_2026-10-22.md).
 
 ## 7D65–7E35: original five-part special smoothing
 
@@ -42,4 +42,4 @@ Godot: `ArcadeDriveSmooth7D65.gd`. The original standalone `ArcadeDriveSpecial7D
 - `tests/godot/test_mechanics.gd` checks the two isolated new stages and their composition across all five physical car slots, including both unresolved external calls, direct positioning, smoothing, verified speed continuation and conditional saveback.
 - The original circuit geometry, pit locations and approved slow bounded portrait camera remain **untouched**.
 
-**Still open:** actual behavior of external routines `7E5E` and `2AD1`; full original `601E` callback scheduling, original per-frame MAME live trace comparison, remaining collision/terrain results, steering and accelerator table provenance, all 14 live QRAM circuit maps, AI, pits/fuel/turbo, campaign/economy, audio and production release. A verified bounded driving chain **is not a playable or fully decompiled game**.
+**Still open:** the `7E5E` continuation beyond its recovered early-return gates (`7EA3` event dispatch and dependencies), the external `2AD1` routine, full original `601E` callback scheduling, original per-frame MAME live trace comparison, remaining collision/terrain results, steering and accelerator table provenance, all 14 live QRAM circuit maps, AI, pits/fuel/turbo, campaign/economy, audio and production release. A verified bounded driving chain **is not a playable or fully decompiled game**.
