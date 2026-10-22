@@ -24,16 +24,20 @@ wrapped. The private verifier checks actual original instructions and
 compares full resulting master RAM plus the ordered bus event sequence.
 
 The public Godot module records the bus events and final E608 control
-state without writing to an invented QRAM surface. With caller-provided
+state. It now also classifies destinations in the **MAME-verified**
+A000–DFFF F4 memory view without mutating QRAM or assuming a visible
+gameplay effect. See [master F4 mapping](ARCADE_MASTER_F4_BANK_MAPPING_2026-10-22.md). With caller-provided
 authentic bank0 source bytes, the per-car path now connects
 `2AD1 → 2AD6 → 2B77`, and stops at `2BCC` before the unverified
 hardware return semantics. Without source bytes, it stops before the
 first original LDI.
 
-**Not recovered:** The actual F4-selected physical memory plane mapping,
-graphics/event side effects, master/slave CPU coordination, and whether
-the selected bus writes can be faithfully replayed in the game engine.
-These require original-running MAME hardware traces. No proprietary
+**Still unresolved:** The active F4 latch at every live entry point,
+QRAM screen/tilemap side effects, event meaning, master/slave CPU
+coordination, and complete end-to-end replay of the event path.
+The physical F4 ROM and A000–DFFF QRAM/battery mapping is now grounded
+in MAME's hardware implementation, but authentic runtime traces are
+still required before applying gameplay-visible effects. No proprietary
 ROM, tables, circuits, graphics or audio are included in public code.
 
 Original circuit geometry and approved portrait camera remain untouched.
