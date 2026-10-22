@@ -2341,6 +2341,13 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                 if route in ["slow_2ad1_return", "slow_7e5e_return_to_2ad1_return"]:
                     CollisionRetry._set8(ram,ix + 0x31,
                         CollisionRetry.get8(ram,ix + 0x31) | 1)
+                if route == "slow_2ad1":
+                    # Force a documented A000-DFFF QRAM target in the
+                    # original 2B77 bus trace, without altering routing.
+                    CollisionRetry._set16(ram,ix + 0x12,0xAEFC)
+                    CollisionRetry._set8(ram,0xE608,0x07)
+                    CollisionRetry._set8(ram,0xE613,0x20)
+                    CollisionRetry._set8(ram,0xE615,0xA0)
             var original: PackedByteArray = ram.duplicate()
             var prepared: PackedByteArray = ScratchSerializer.load_slot_to_scratch(ram,slot)
             var checkpoint: Dictionary = CollisionCheckpoint.snapshot(prepared)
@@ -2419,6 +2426,29 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                             traced["original_event_2b77"]["bus_sequence_complete"] and
                             traced["original_event_2b77"]["memory_bus_writes"].size() == 8,
                             "original 2AD1 connects through 2AD6 staging to 2B77 bus events")
+                    var battery: PackedByteArray = PackedByteArray()
+                    battery.resize(0x4000)
+                    battery.fill(0)
+                    var qram: PackedByteArray = PackedByteArray()
+                    qram.resize(0x10000)
+                    qram.fill(0)
+                    var replayed: Dictionary = PhysicsPrefix.run_verified_original_slot_from_7017(
+                        ram,ix,speed_table,select_table,33,27,steer_table,19,
+                        null,banked_source,battery,qram)
+                    var hardware: Dictionary = replayed["original_event_2b77"]
+                    var out_qram: PackedByteArray = hardware["qram"]
+                    _verify(hardware["memory_replay_complete"] and
+                            hardware["partial_update_requests"] == 8 and
+                            out_qram[0x1004] == CollisionRetry.get8(
+                                traced["original_event_2ad6"]["ram"],0xE900) and
+                            out_qram[0x9004] == CollisionRetry.get8(
+                                traced["original_event_2ad6"]["ram"],0xE901) and
+                            replayed["ram"] == traced["ram"] and
+                            not replayed["complete"] and
+                            not replayed["scratch_saved"] and
+                            ram == original and
+                            replayed["next_pc"] == 0x2BCC,
+                            "connected 7017→2AD1→2AD6→2B77 replay uses exact QRAM planes")
 
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and

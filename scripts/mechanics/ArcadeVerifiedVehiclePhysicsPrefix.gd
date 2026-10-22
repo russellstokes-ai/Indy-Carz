@@ -36,6 +36,7 @@ const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
 const Bus2B77 = preload("res://scripts/mechanics/ArcadeDriveEvent2B77Bus.gd")
+const EventBusReplay = preload("res://scripts/mechanics/ArcadeEventBusMemoryReplay.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -281,7 +282,9 @@ static func run_verified_original_slot_from_7017(
         steering_control_table_256: PackedByteArray,
         original_weighting_factor: int,
         original_event_course_table: Variant = null,
-        original_banked_event_source: Variant = null) -> Dictionary:
+        original_banked_event_source: Variant = null,
+        original_battery_ram: Variant = null,
+        original_qram: Variant = null) -> Dictionary:
     ## Only an authenticated original 7017 entry may use this method.
     ## It loads the original car record ONCE, runs original CALL 75F2
     ## geometry checkpoint, then original 701A status gate.
@@ -400,11 +403,20 @@ static func run_verified_original_slot_from_7017(
             drive_ram = event2ad6["ram"]
             pending_pc = event2ad6["next_pc"]
         if pending_pc == Bus2B77.ENTRY_PC:
-            # Trace the genuine 3 F4 bank writes and 8 ordered memory
-            # bus writes, but do NOT apply unknown QRAM hardware effects
-            # or falsely return to the driving caller.
-            event2b77 = Bus2B77.trace_after_original_2b77(
-                drive_ram,original_ix)
+            # The ROM-verified bus trace remains the default. When BOTH
+            # hardware planes are supplied explicitly, replay the known
+            # MAME battery/QRAM writes without inventing video effects
+            # or returning through the unverified 2BCC CALL stack.
+            if original_battery_ram != null or original_qram != null:
+                assert(original_battery_ram is PackedByteArray)
+                assert(original_qram is PackedByteArray)
+                assert(original_battery_ram.size() == EventBusReplay.BATTERY_SIZE)
+                assert(original_qram.size() == EventBusReplay.QRAM_SIZE)
+                event2b77 = EventBusReplay.replay_original_2b77(
+                    drive_ram,original_ix,original_battery_ram,original_qram)
+            else:
+                event2b77 = Bus2B77.trace_after_original_2b77(
+                    drive_ram,original_ix)
             drive_ram = event2b77["ram"]
             pending_pc = event2b77["next_pc"]
         if pending_pc != -1:

@@ -35,3 +35,10 @@ MAME reference:
 - https://github.com/mamedev/mame/blob/master/src/mame/cinematronics/leland.cpp
 - https://github.com/mamedev/mame/blob/master/src/mame/cinematronics/leland_m.cpp
 - https://github.com/mamedev/mame/blob/master/src/mame/cinematronics/leland_v.cpp
+
+**22 October continuation:** the existing per-car `7017` path accepts optional
+caller-provided `battery_ram` and `qram` snapshots. When present together,
+`2AD1 → 2AD6 → 2B77` uses this hardware replay and returns the selected memory
+planes inside `original_event_2b77` while remaining safely stopped at `2BCC`.
+The default signature and previous trace-only route are unchanged. A Godot
+integration test checks all five physical car slots and two QRAM planes.
