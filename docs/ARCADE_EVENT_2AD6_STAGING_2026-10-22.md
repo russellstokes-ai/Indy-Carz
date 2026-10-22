@@ -3,8 +3,8 @@
 **22 October 2026. Engine extraction gate remains OPEN.**
 
 Original bank0 Z80 code at `2AD6–2B76` selects one of four staging groups
-from the car's `IX+3A` byte, reads two bytes from the original bank0
-`3F00–40FF` source window, and prepares four 16-bit words in master RAM
+from the car's `IX+3A` byte, reads two bytes from the original mapped
+`3F00–40FF` memory view, and prepares four 16-bit words in master RAM
 `E900–E907`. The selected word is one byte at the computed source address
 and a second byte 25 addresses later. Earlier groups default to `0013`;
 later groups default to `0001`.
