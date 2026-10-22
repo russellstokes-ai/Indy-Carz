@@ -100,7 +100,7 @@ class Original714ELiveAuditTests(unittest.TestCase):
 
     def test_nonreturning_bypass_not_counted_as_passed(self):
         master,rows=sample()
-        rows[0]=rows[0].replace("E76D=0000","E76D=0100").replace(
+        rows[0]=rows[0].replace("E76D=0000","E76D=0101").replace(
             "E76F=0000","E76F=0100")
         with self.assertRaisesRegex(ValueError,"bypass"):
             audit_rows(rows,master)
