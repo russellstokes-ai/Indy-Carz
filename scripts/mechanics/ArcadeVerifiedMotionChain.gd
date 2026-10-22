@@ -22,6 +22,8 @@ const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const Control = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
+const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoubleProjection.gd")
+const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
 
 const E76B: int = 0xE76B
 const E768: int = 0xE768
@@ -366,3 +368,64 @@ static func advance_through_original_steering_control(
     previous["verified_prefix_complete"] = true
     previous["unverified_downstream"] = "original Z80 7442-752F"
     return previous
+
+
+
+static func advance_through_original_steering_speed_limit(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        original_b: int,
+        original_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Complete bounded genuine original steering chain up to original
+    ## 7499 on the 7376/7381 route. The other authentic 7315
+    ## continuation goes straight to 7530 and SKIPS 7376–7498.
+    ##
+    ## This is NOT a full original simulation frame. The intermediate
+    ## B/C selector, 0x2000 original ROM factors and E96D control table
+    ## are caller-supplied, never guessed in this pure physical state API.
+    var earlier: Dictionary = advance_through_original_steering_control(
+        master_ram, physical_car, original_ix, original_b, original_c,
+        original_direct_factor, original_reverse_factor,
+        control_table_256, original_weighting_factor)
+    earlier["double_projection_7442"] = {}
+    earlier["speed_limiter_7463"] = {}
+
+    if earlier["next_pc"] != 0x7442:
+        # Authentic original 7315 normal exit (7530), or original
+        # nonlocal 1689. Do not invent a steering extension.
+        return earlier
+
+    var memory: PackedByteArray = earlier["ram"]
+    var control_a: int = earlier["steering_control_73f6"]["a"]
+    var weighted_a: int = earlier["weighted_73cd"]["weighted"]
+    var car_heading_flag: int = State.get8(memory, original_ix + 0x79)
+    var car_status: int = State.get8(memory, original_ix + 0x31)
+
+    var projection: Dictionary = DoubleProjection.calculate(
+        control_a, car_heading_flag, weighted_a, car_status)
+    assert(projection["next_pc"] == 0x7463 or
+           projection["next_pc"] == 0x748A)
+    earlier["double_projection_7442"] = projection
+
+    # The original BIT 0 at 745D either executes 7463–7489 or
+    # jumps directly to 748A. The speed limiter chooses exactly
+    # the same branch from the original status byte and then always
+    # writes original IX+4C/4D and shared angular E767.
+    var limited: Dictionary = SpeedLimiter.apply_to_ram(
+        memory, original_ix, projection["correction"])
+    assert(limited["limiter_bypassed"] ==
+           projection["skip_velocity_limiter"])
+    assert(limited["next_pc"] == 0x7499)
+
+    earlier["ram"] = limited["ram"]
+    earlier["speed_limiter_7463"] = limited
+    earlier["next_pc"] = 0x7499
+    earlier["complete"] = false
+    earlier["verified_prefix_complete"] = true
+    earlier["unverified_downstream"] = "original Z80 7499–752F"
+    return earlier
