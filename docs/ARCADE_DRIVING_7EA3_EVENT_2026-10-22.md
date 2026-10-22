@@ -6,26 +6,28 @@ finished.
 
 ## Authenticated original instruction boundaries
 
-- Main master bank 0: \`7EA3–7F32\` (event dispatch, reuse, allocation, record setup).
-- Allocator: \`8659–8693\`, 16 slots of 16 bytes at master RAM \`E800–E8FF\`.
-- Course lookup: fixed \`1767–1774\` selects a 20-byte course block from the
-  14-entry pointer table at \`8282\`; fixed \`174E–1766\` selects a four-byte
+- Main master bank 0: `7EA3–7F32` (event dispatch, reuse, allocation, record setup).
+- Allocator: `8659–8693`, 16 slots of 16 bytes at master RAM `E800–E8FF`.
+- Course lookup: fixed `1767–1774` selects a 20-byte course block from the
+  14-entry pointer table at `8282`; fixed `174E–1766` selects a four-byte
   per-car event tuple. Five cars, four bytes each, in original E,D,L,H order.
-- Normal return from the caller's \`7E5E\` is \`7091\`, then the existing
-  \`7092\` car-ID gate and possible \`2AD1\` call.
-- \`8022\` invokes the much larger \`0971\` collision service. Its effects are
-  **not** modelled by this stage and execution stops there.
-- Missing authentic course data stops at the original \`1767\` call, retaining
+- Normal return from the caller's `7E5E` is `7091`, then the existing
+  `7092` car-ID gate and possible `2AD1` call.
+- Original `8022` saves/restores DE around `0971`. Three original
+  `0971` early returns are now connected: status bit 0 set, car ID >=3,
+  or nonzero `IX+23`. Otherwise execution stops at `0985` before its
+  banked 24-byte hardware transfer; those hardware effects are not fabricated.
+- Missing authentic course data stops at the original `1767` call, retaining
   the exact already-executed event-record prewrites.
 
-The stage sets \`IX+31\` bit 6 and \`IX+7E\` bit 3. A qualifying event may
+The stage sets `IX+31` bit 6 and `IX+7E` bit 3. A qualifying event may
 reuse an earlier slot, reject allocation, allocate the first free slot, or
 replace the earliest strictly lower-priority slot. Successful allocation
 initializes the original event record, including its priority, car ID, course
 coordinates, flags and countdown. Reuse updates only the original four fields.
 
-**Decoder caution:** The actual \`DD 75 64\` opcode stores register **L** at
-\`(IX+64)\`, not IXL. Similarly \`DD 6E 64\` loads **L** from \`(IX+64)\`.
+**Decoder caution:** The actual `DD 75 64` opcode stores register **L** at
+`(IX+64)`, not IXL. Similarly `DD 6E 64` loads **L** from `(IX+64)`.
 Some linear disassembly labels are misleading here. The recovered implementation
 uses the actual instruction semantics.
 
@@ -34,12 +36,12 @@ uses the actual instruction semantics.
 A private, SHA-256 authenticated master image was reconstructed from the owner's
 earlier private disassembly archive. An independent integer/state model was
 compared with a bounded interpreter executing the original Z80 instruction bytes,
-including \`8659\`, \`1767\` and \`174E\`. The interpreter does **not** execute
-the unresolved \`8022\` call.
+including `8659`, `1767`, `174E`, `8022` and `0971`. The interpreter
+stops at the unresolved `0985` continuation.
 
-- **100,000 original-opcode comparisons: zero mismatches**, including external
-  stop, event reuse, allocator rejection, free allocation, replacement and
-  missing-course-data stop.
+- **100,000 original-opcode comparisons: zero mismatches**, including all
+  three `0971` early returns, the `0985` stop, event reuse, allocator
+  rejection, free allocation, replacement and missing-course-data stop.
 - All **14 original course pointers and 70 original per-car event tuples**
   were also checked against the original opcode path, without publishing their
   proprietary values.
@@ -47,16 +49,17 @@ the unresolved \`8022\` call.
   reuse, collision stop, missing lookup and fail-closed invalid inputs.
 - Godot headless tests cover the new stage across all five physical car slots.
   The original 7017 driving pipeline now resumes only on an authentic
-  \`7091\` return. It stops on unresolved \`8022\`, \`1767\`, \`7F1A\` or
-  \`2AD6\` paths.
+  `7091` return. It stops on unresolved `0985`, `1767`, `7F1A` or
+  `2AD6` paths.
 - No original ROM, source listings, artwork, music or course-table contents
   are committed to GitHub. The Godot API requires caller-provided table bytes.
 
 ## Still open — required before 100% engine acceptance
 
-1. Original \`8022 → 0971\` collision-service effects, nested contact dispatch
-   and complete car/terrain collision resolution.
-2. Original \`2AD6\` banked event path and \`7F33+\` event execution/lifecycle.
+1. Original `0985` banked-memory transfer hardware effects after the three
+   recovered `8022 → 0971` early returns, nested contact dispatch and
+   complete car/terrain collision resolution.
+2. Original `2AD6` banked event path and `7F33+` event execution/lifecycle.
 3. Real original frame scheduler, six-slot callback timing, AI and opponents.
 4. Fuel, turbo, damage, repairs, pits, upgrades, race rules, championships,
    economy, audio and all other master/slave/audio CPU interactions.
