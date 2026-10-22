@@ -18,7 +18,7 @@ def independent(ram: bytes | bytearray, ix: int,
     if len(ram) != 0x2000 or ix not in IXS:
         raise ValueError("Original E000–FFFF master RAM and physical car IX required")
     if source is not None and len(source) != SOURCE_LENGTH:
-        raise ValueError("Expected original bank0 3F00–40FF 512-byte source window")
+        raise ValueError("Expected original mapped 3F00–40FF source window (4000+ may be banked)")
     out = bytearray(ram)
     value = out[ix + 0x3A - 0xE000]
     group = 0 if value < 12 else 1 if value < 36 else 2 if value < 60 else 3
