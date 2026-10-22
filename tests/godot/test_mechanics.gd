@@ -25,6 +25,7 @@ const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd
 const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
+const Bus2B77 = preload("res://scripts/mechanics/ArcadeDriveEvent2B77Bus.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
@@ -92,6 +93,7 @@ func _run_checks() -> void:
     _test_original_7ea3_event_dispatch()
     _test_original_2ad1_original_bit_gate()
     _test_original_2ad6_event_staging()
+    _test_original_2b77_bus_trace()
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2205,6 +2207,43 @@ func _test_original_2ad6_event_staging() -> void:
                     pending["next_pc"] == Event2AD6.MISSING_SOURCE_PC[group] and
                     pending["ram"] == original,
                     "original 2AD6 stops before first LDI when source table missing")
+
+
+func _test_original_2b77_bus_trace() -> void:
+    ## Exact original CPU bus events; QRAM hardware interpretation
+    ## is deliberately NOT simulated by the Godot engine.
+    for ix in CollisionRetry.CAR_POINTERS:
+        var ram: PackedByteArray = PackedByteArray()
+        ram.resize(CollisionRetry.LENGTH)
+        ram.fill(0)
+        CollisionRetry._set16(ram, ix + 0x12, 0x4FF6)
+        CollisionRetry._set8(ram, 0xE608, 0xA7)
+        CollisionRetry._set8(ram, 0xE613, 0xA0)
+        CollisionRetry._set8(ram, 0xE615, 0xF0)
+        CollisionRetry._set8(ram, 0xE616, 0x83)
+        for k in range(8):
+            CollisionRetry._set8(ram, 0xE900 + k, (k * 19 + 7) & 255)
+        var before: PackedByteArray = ram.duplicate()
+        var result: Dictionary = Bus2B77.trace_after_original_2b77(ram, ix)
+        _verify(result["next_pc"] == 0x2BCC and
+                result["bus_sequence_complete"] and not result["complete"] and
+                result["port_f4_values"] == [0xA7, 0xF7, 7] and
+                result["memory_bus_writes"].size() == 8 and
+                CollisionRetry.get8(result["ram"], 0xE608) == 7 and
+                ram == before,
+                "original 2B77 F4 control sequence records eight bus writes")
+        var expected_addresses: Array = [
+            0x50FE, 0x50FF, 0x5000, 0x5001,
+            0x5001, 0x5000, 0x50FF, 0x50FE]
+        for k in range(8):
+            var original_word: int = (k * 2 if k < 4 else
+                1 + (7 - k) * 2)
+            var expected_bank: int = 0xA7 if k < 4 else 0xF7
+            var bus_event: Array = result["memory_bus_writes"][k]
+            _verify(bus_event == [
+                expected_bank, expected_addresses[k],
+                CollisionRetry.get8(ram, 0xE900 + original_word)],
+                "original 2B77 INC/DEC E wraps low address without incrementing D")
 
 
 func _test_original_7d65_smoothing_stage() -> void:
