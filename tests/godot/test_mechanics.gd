@@ -23,6 +23,7 @@ const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoublePr
 const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
 const SecondProjection = preload("res://scripts/mechanics/ArcadeSteeringSecondProjection.gd")
 const SteeringDecay = preload("res://scripts/mechanics/ArcadeSteeringDecay.gd")
+const PhysicsPrefix = preload("res://scripts/mechanics/ArcadeVerifiedVehiclePhysicsPrefix.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -59,6 +60,7 @@ func _initialize() -> void:
     _test_original_steering_control_73f6()
     _test_original_steering_7442_7463()
     _test_original_steering_7499_74d8()
+    _test_original_vehicle_physics_prefix()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1315,6 +1317,96 @@ func _test_original_steering_7499_74d8() -> void:
             normal["second_projection_7499"].is_empty() and
             normal["steering_decay_74d8"].is_empty(),
             "original 7315 normal route skips the other steering stages")
+
+
+func _test_original_vehicle_physics_prefix() -> void:
+    ## Shared original master CPU E72B/E735 working state is distinct
+    ## from the physical five 256-byte car slots at E000,E100... .
+    ## Two legitimate CPU entries: PC7530 integrates+footprint, while
+    ## PC7572 ONLY recalculates footprint at the existing centre.
+    var baseline: PackedByteArray = PackedByteArray()
+    baseline.resize(0x2000)
+    baseline.fill(0)
+    CollisionRetry._set16(baseline,0xE735,0x1000)
+    CollisionRetry._set16(baseline,0xE72B,0xB000)
+    CollisionRetry._set16(baseline,0xE767,0x2400)
+    CollisionRetry._set16(baseline,0xE769,0x4000)
+    CollisionRetry._set16(baseline,0xE76B,0x3F00)
+    baseline[0xE600 - 0xE000] = 0xA7
+
+    var expectation: Dictionary = Motion.integrate_center(
+        CollisionRetry.get8(baseline,0xE76A),
+        CollisionRetry.get8(baseline,0xE76C),
+        CollisionRetry.get16(baseline,0xE735),
+        CollisionRetry.get16(baseline,0xE72B))
+    var actual: Dictionary = PhysicsPrefix.apply_original_7530_to_75f1(baseline)
+    _verify(actual["next_pc"] == 0x75F1 and actual["integrated"] and
+            CollisionRetry.get16(actual["ram"],0xE735) == expectation["x"] and
+            CollisionRetry.get16(actual["ram"],0xE72B) == expectation["y"],
+            "original 7530 movement writes exact 16-bit working RAM centre")
+    var original_footprint: Dictionary = Motion.footprint(
+        CollisionRetry.get8(baseline,0xE768),expectation["x"],expectation["y"])
+    for offset in original_footprint.keys():
+        _verify(CollisionRetry.get16(actual["ram"],0xE72B+offset) ==
+                original_footprint[offset],
+                "original 7572 eight-footprint-word geometry and RAM offsets")
+    _verify(baseline[0xE600 - 0xE000] == 0xA7 and
+            actual["ram"][0xE600 - 0xE000] == 0xA7 and
+            CollisionRetry.get16(baseline,0xE735) == 0x1000,
+            "pure original 7530 calculation retains input and unrelated state")
+
+    var geometrical: Dictionary = PhysicsPrefix.apply_original_7572_geometry_only(baseline)
+    _verify(not geometrical["integrated"] and
+            geometrical["movement"].is_empty() and
+            geometrical["next_pc"] == 0x75F1 and
+            CollisionRetry.get16(geometrical["ram"],0xE735) == 0x1000 and
+            CollisionRetry.get16(geometrical["ram"],0xE72B) == 0xB000,
+            "original 7572 geometry-only path never invents displacement")
+    var only_footprint: Dictionary = Motion.footprint(
+        CollisionRetry.get8(baseline,0xE768),0x1000,0xB000)
+    for offset in only_footprint.keys():
+        _verify(CollisionRetry.get16(geometrical["ram"],0xE72B+offset) ==
+                only_footprint[offset],
+                "original no-motion geometry recalculation exact in master RAM")
+
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+
+    for ix in CollisionRetry.CAR_POINTERS:
+        for low_steering in [false,true]:
+            var state: PackedByteArray = baseline.duplicate()
+            CollisionRetry._set16(state,0xE771,0x00FF if low_steering else 0x0100)
+            CollisionRetry._set16(state,0xE773,0x0200)
+            CollisionRetry._set16(state,0xE789,0x0800)
+            state[ix + 0x70 - 0xE000] = 130
+            state[ix + 0x71 - 0xE000] = 21
+            state[ix - 1 - 0xE000] = 255
+            state[ix + 0x79 - 0xE000] = 0x80
+            state[ix + 0x31 - 0xE000] = 0
+            state[ix + 0x41 - 0xE000] = 1
+            state[ix + 0x00 - 0xE000] = 0xC1
+
+            var physical_car: ArcadeCarRecord = Car.new()
+            physical_car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+            var before_ram: PackedByteArray = state.duplicate()
+            var driven: Dictionary = PhysicsPrefix.run_verified_prefix(
+                state,physical_car,ix,0,0,0,0,table,255)
+
+            _verify(driven["next_pc"] == 0x75F1 and driven["complete"] and
+                    driven["original_movement_7530"]["next_pc"] == 0x75F1,
+                    "connected original 71C8-75F0 CPU physics reaches RET at 75F1")
+            var operation: Dictionary = driven["original_movement_7530"]
+            var movement: Dictionary = operation["movement"]
+            _verify(CollisionRetry.get16(driven["ram"],0xE735) == movement["x"] and
+                    CollisionRetry.get16(driven["ram"],0xE72B) == movement["y"],
+                    "original shared RAM movement matches verified connected Z80 projection")
+            _verify(before_ram == state and
+                    physical_car.read_u8(Car.FIELD_PEDAL_RESPONSE) == 16 and
+                    CollisionRetry.get8(driven["ram"],0xE600) == 0xA7,
+                    "complete bounded original driving prefix does not mutate inputs")
+            _verify(driven["unverified_downstream"].contains("callback"),
+                    "full vehicle callback/terrain scheduler remains an explicit boundary")
 
 
 func _test_portrait_camera() -> void:
