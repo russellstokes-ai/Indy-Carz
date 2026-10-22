@@ -9,10 +9,13 @@ from the car's `IX+3A` byte, reads two bytes from the original mapped
 and a second byte 25 addresses later. Earlier groups default to `0013`;
 later groups default to `0001`.
 
-**Bank dependency:** Source addresses at `4000+` are in a banked ROM
-window. Original opcode parity verifies the selection arithmetic, but does
-not establish which bank the live arcade hardware exposes for every frame.
-The caller must provide the actual active mapped source bytes.
+**Bank dependency (hardware mapping now verified):** All source addresses
+`3F00–40FF` lie in the master Z80 `2000–9FFF` banked ROM window.
+MAME's port-F4 low nibble selects one of 16 MAME-rotated ROM banks;
+the original opcode tests alone do not establish the **live F4 latch**
+at every call. The caller must provide the authentic mapped source bytes
+or a full rotated master image plus an actually observed F4 value.
+See [master F4 mapping](ARCADE_MASTER_F4_BANK_MAPPING_2026-10-22.md).
 
 | Input `IX+3A` | Group | Selected E900 word | Source address |
 |---|---:|---|---|
@@ -42,5 +45,6 @@ per-car driving path. It does **not** return to `709B` until the original
 banked hardware continuation is recovered. Original circuit geometry,
 camera and prior physics were left unchanged.
 
-Next: verify `2B77–2BCC` F4 writes, original hardware bank mapping,
-event effects and the rest of the original race engine with MAME traces.
+The `2B77–2BCC` F4 CPU bus sequence and MAME bank/view mapping are now
+separately documented. Next: verify the live F4 latch and QRAM effects,
+event consequences and the rest of the original race engine with MAME traces.
