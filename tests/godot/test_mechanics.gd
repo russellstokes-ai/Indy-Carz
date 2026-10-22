@@ -2404,6 +2404,20 @@ func _test_original_701a_gate_and_7017_fast_path() -> void:
                             (0x7E5E if route == "slow_7e5e" else 0x2AD1) and
                         CollisionRetry.get8(actual["ram"],ix + 0x3A) == 2,
                         "original 7049 stops at missing 1767 or 2AD6 table LDI")
+                if route == "slow_2ad1":
+                    var banked_source: PackedByteArray = PackedByteArray()
+                    for source_index in range(512):
+                        banked_source.append((source_index * 13 + 29) & 255)
+                    var traced: Dictionary = PhysicsPrefix.run_verified_original_slot_from_7017(
+                        ram,ix,speed_table,select_table,33,27,steer_table,19,
+                        null,banked_source)
+                    _verify(traced["next_pc"] == 0x2BCC and
+                            not traced["complete"] and not traced["scratch_saved"] and
+                            traced["original_event_2ad6"]["staging_complete"] and
+                            traced["original_event_2b77"]["bus_sequence_complete"] and
+                            traced["original_event_2b77"]["memory_bus_writes"].size() == 8,
+                            "original 2AD1 connects through 2AD6 staging to 2B77 bus events")
+
             elif route == "slow_7e5e_return_to_2ad1":
                 _verify(actual["original_slow_7049"]["next_pc"] == 0x7E5E and
                         actual["original_external_7e5e"]["branch"] == "return_equal" and
