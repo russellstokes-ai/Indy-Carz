@@ -18,6 +18,7 @@ const AngularCorrection = preload("res://scripts/mechanics/ArcadeDriveMotionCorr
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
 const DriveCarry = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
+const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const CollisionCheckpoint = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
@@ -76,6 +77,8 @@ func _run_checks() -> void:
     _test_original_scratch_serializer_and_car_state()
     _test_original_714e_control_selector()
     _test_original_7124_carry_and_714e_pipeline()
+    _test_original_709c_speed_stage()
+    _test_original_709c_to_per_car_slot()
     _test_original_7315_resume_equivalence()
     _test_original_slot_carry_selected_driving_pipeline()
     _test_original_geometry_checkpoint_and_restore()
@@ -1810,6 +1813,142 @@ func _test_original_slot_carry_selected_driving_pipeline() -> void:
                         CollisionRetry.get16(resumed["ram"],0xE76B) == 0 and
                         actual["ram"] == stored,
                         "original 7315 bypass completes geometry without invented drive motion")
+
+
+func _test_original_709c_speed_stage() -> void:
+    ## The original 709C stage consumes the original previous control B,
+    ## current E765 word, indexed car bytes and the 2000–20FF ROM page.
+    ## No generated steering, fuel, fabricated friction or track speed.
+    var table: PackedByteArray = PackedByteArray()
+    table.resize(256)
+    table.fill(0)
+    table[0] = 127
+    var car: ArcadeCarRecord = Car.new()
+    car.write_u8(0xBC, 0)  # original IX+3C source-table index
+    car.write_u8(0xD4, 0)  # original IX+54 bias
+    car.write_u8(0x60, 10) # original IX-20, plus-branch multiplier
+    car.write_u8(0x61, 101)# original IX-1F, minus-branch multiplier
+    var ram: PackedByteArray = PackedByteArray()
+    ram.resize(CollisionRetry.LENGTH)
+    ram.fill(0)
+
+    CollisionRetry._set16(ram,0xE765,0x7F00)
+    var before: PackedByteArray = ram.duplicate()
+    var add: Dictionary = Speed709C.apply_original_709c(ram,car,255,table)
+    _verify(add["branch"] == "add" and add["threshold_b"] == 165 and
+            add["e765"] == 0x7FFF and add["next_pc"] == 0x7124,
+            "original 709C positive speed addition saturates on Z80 overflow")
+    _verify(CollisionRetry.get16(add["ram"],0xE765) == 0x7FFF and
+            ram == before,"original E765 speed stage writes only cloned master RAM")
+
+    CollisionRetry._set16(ram,0xE765,0x4000)
+    car.write_u8(0xD4,10)
+    car.write_u8(0x60,1)
+    var normal: Dictionary = Speed709C.apply_original_709c(ram,car,120,table)
+    _verify(normal["branch"] == "add" and normal["e765"] == 16471 and
+            normal["b"] == 88,
+            "original 709C normal 16-bit signed-slot0 correction")
+
+    car.write_u8(0xD4,0)
+    CollisionRetry._set16(ram,0xE765,0xFF00)
+    var subtract: Dictionary = Speed709C.apply_original_709c(ram,car,0,table)
+    _verify(subtract["branch"] == "subtract" and subtract["e765"] == 13244 and
+            subtract["b"] == 255 and subtract["threshold_b"] == 0,
+            "original 709C negative correction and prior-speed B difference")
+
+    CollisionRetry._set16(ram,0xE765,0)
+    table.fill(0)
+    var equal: Dictionary = Speed709C.apply_original_709c(ram,car,0,table)
+    _verify(equal["branch"] == "equal" and equal["e765"] == 0 and
+            equal["next_pc"] == 0x7124,
+            "original 709C equality bypass returns to original 7124")
+
+    # All five original records share identical arithmetic, while the
+    # caller must still supply its authentic physical slot and lookup page.
+    for slot in range(5):
+        car = Car.new()
+        car.write_u8(0xD4,slot * 17)
+        car.write_u8(0xBC,slot * 9)
+        car.write_u8(0x60,slot * 53)
+        car.write_u8(0x61,255 - slot * 37)
+        for input_b in range(0,256,17):
+            CollisionRetry._set16(ram,0xE765,(slot * 13291 + input_b * 241) & 65535)
+            var value: Dictionary = Speed709C.apply_original_709c(ram,car,input_b,table)
+            var threshold: int = min(255,((input_b * 166 + 128) >> 8) + slot * 17)
+            _verify(value["threshold_b"] == threshold and
+                    value["next_pc"] == 0x7124 and
+                    CollisionRetry.get16(value["ram"],0xE765) == value["e765"],
+                    "five-slot original 709C threshold and E765 store")
+
+
+func _test_original_709c_to_per_car_slot() -> void:
+    ## Independently compose each preloaded original slot: ROM-free
+    ## 709C speed, 7124 projection, 714E selector and 75F1 storeback.
+    var speed_table: PackedByteArray = PackedByteArray()
+    speed_table.resize(256)
+    var select_table: PackedByteArray = PackedByteArray()
+    select_table.resize(257)
+    var steer_table: PackedByteArray = PackedByteArray()
+    steer_table.resize(256)
+    for i in range(256):
+        speed_table[i] = (i * 71 + 33) & 255
+        select_table[i] = (i * 19 + 17) & 255
+        steer_table[i] = (i * 53 + 99) & 255
+    select_table[256] = 14
+
+    for index in range(5):
+        var original_ix: int = CollisionRetry.CAR_POINTERS[index]
+        var slot: int = ScratchSerializer.physical_slot_for_ix(original_ix)
+        for bypass in [false,true]:
+            var ram: PackedByteArray = PackedByteArray()
+            ram.resize(CollisionRetry.LENGTH)
+            ram.fill(0)
+            CollisionRetry._set8(ram,slot + 0xBC,12 + index)
+            CollisionRetry._set8(ram,slot + 0xD4,30 + index * 7)
+            CollisionRetry._set8(ram,slot + 0x60,75 + index)
+            CollisionRetry._set8(ram,slot + 0x61,102 + index)
+            CollisionRetry._set8(ram,slot + 0xD7,32)  # pedal response
+            CollisionRetry._set8(ram,slot + 0xEE,3)
+            CollisionRetry._set8(ram,slot + 0xEF,7)
+            CollisionRetry._set16(ram,slot + 0x3A,0x3200 + index * 219)
+            CollisionRetry._set16(ram,slot + 0x42,0x0130 if bypass else 0)
+            CollisionRetry._set16(ram,slot + 0x44,0x0140 if bypass else 0)
+            var initial_snapshot: PackedByteArray = ram.duplicate()
+
+            var prepared: PackedByteArray = ScratchSerializer.load_slot_to_scratch(ram,slot)
+            var car_bytes: PackedByteArray = prepared.slice(
+                slot - CollisionRetry.BASE,
+                slot - CollisionRetry.BASE + ScratchSerializer.ORIGINAL_SLOT_LENGTH)
+            var car: ArcadeCarRecord = Car.new(car_bytes)
+            var speed: Dictionary = Speed709C.apply_original_709c(
+                prepared,car,53 + index,speed_table)
+            var projection: Dictionary = DriveCarry.apply_to_ram(speed["ram"])
+            var selected: Dictionary = MotionChain.advance_from_verified_7124_carry_source(
+                speed["ram"],car,original_ix,select_table,
+                speed["b"],projection["cos"],33,27,steer_table,19)
+
+            var actual: Dictionary = PhysicsPrefix.run_verified_original_slot_from_709c(
+                ram,original_ix,53 + index,speed_table,select_table,
+                33,27,steer_table,19)
+            _verify(actual["original_speed_709c"]["e765"] == speed["e765"] and
+                    actual["original_speed_709c"]["threshold_b"] == speed["threshold_b"] and
+                    ram == initial_snapshot,
+                    "original 709C stage composes without mutating five source records")
+            _verify(actual["used_carry"] == selected["used_carry"] and
+                    actual["original_714e_bypass"] == selected["original_714e_bypass"],
+                    "original speed register B and projected C reach real 714E selector")
+            if selected["next_pc"] == 0x7530:
+                var moved: Dictionary = PhysicsPrefix.apply_original_7530_to_75f1(selected["ram"])
+                var expected_ram: PackedByteArray = ScratchSerializer.save_scratch_to_slot(
+                    moved["ram"],slot)
+                _verify(actual["ram"] == expected_ram and actual["next_pc"] == 0x75F1 and
+                        actual["scratch_saved"] and actual["complete"],
+                        "original 709C update commits through 75F1 storeback")
+            else:
+                _verify(selected["next_pc"] == 0x1689 and
+                        actual["next_pc"] == 0x1689 and
+                        not actual["scratch_saved"] and not actual["complete"],
+                        "original 1689 escape stops without fabricating a slot save")
 
 
 func _test_original_geometry_checkpoint_and_restore() -> void:

@@ -27,6 +27,8 @@ const Chain = preload("res://scripts/mechanics/ArcadeVerifiedMotionChain.gd")
 const Motion = preload("res://scripts/mechanics/ArcadeMotionGeometry.gd")
 const Serializer = preload("res://scripts/mechanics/ArcadeScratchSerializer.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
+const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
+const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 
 const ORIGINAL_MOVE_START: int = 0x7530
 const ORIGINAL_FOOTPRINT_START: int = 0x7572
@@ -207,6 +209,74 @@ static func run_verified_original_slot_from_7124(
         physical_slot - State.BASE,
         physical_slot - State.BASE + Serializer.ORIGINAL_SLOT_LENGTH)
     var original_car: ArcadeCarRecord = Car.new(physical_bytes)
+
+    return _finish_loaded_original_slot_from_7124(
+        prepared, original_car, original_ix,
+        original_control_window_257, inherited_b, inherited_c,
+        original_direct_factor, original_reverse_factor,
+        steering_control_table_256, original_weighting_factor)
+
+
+static func run_verified_original_slot_from_709c(
+        master_ram: PackedByteArray,
+        original_ix: int,
+        original_b_at_709c: int,
+        original_rom_2000_table_256: PackedByteArray,
+        original_control_window_257: PackedByteArray,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        steering_control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Authentically extend the car chain backwards to 709C. The genuine
+    ## 709C–7123 speed arithmetic determines E765 and the outgoing B
+    ## register. Original 7124's cosine ROM load sets the outgoing C.
+    ## This replaces no original 7017–709B input/scheduling behaviour.
+    assert(master_ram.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    var physical_slot: int = Serializer.physical_slot_for_ix(original_ix)
+    var prepared: PackedByteArray = Serializer.load_slot_to_scratch(
+        master_ram,physical_slot)
+    var physical_bytes: PackedByteArray = prepared.slice(
+        physical_slot - State.BASE,
+        physical_slot - State.BASE + Serializer.ORIGINAL_SLOT_LENGTH)
+    var original_car: ArcadeCarRecord = Car.new(physical_bytes)
+
+    var speed: Dictionary = Speed709C.apply_original_709c(
+        prepared,original_car,original_b_at_709c,original_rom_2000_table_256)
+    var real_projection: Dictionary = Carry7124.calculate(
+        State.get8(speed["ram"],Carry7124.HEADING),
+        State.get16(speed["ram"],Carry7124.ANGULAR_WORD),
+        State.get16(speed["ram"],Carry7124.MOTION_WORD))
+
+    var result: Dictionary = _finish_loaded_original_slot_from_7124(
+        speed["ram"], original_car, original_ix,
+        original_control_window_257,
+        speed["b"], real_projection["cos"],
+        original_direct_factor, original_reverse_factor,
+        steering_control_table_256, original_weighting_factor)
+    result["original_speed_709c"] = speed
+    result["inherited_714e_b"] = speed["b"]
+    result["inherited_714e_c"] = real_projection["cos"]
+    result["unverified_upstream"] = "original 7017–709B inputs, controls, timing and calls"
+    return result
+
+
+static func _finish_loaded_original_slot_from_7124(
+        prepared: PackedByteArray,
+        original_car: ArcadeCarRecord,
+        original_ix: int,
+        original_control_window_257: PackedByteArray,
+        inherited_b: int,
+        inherited_c: int,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        steering_control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Common verified 7124 continuation. Preserves the caller's
+    ## ALREADY LOADED scratch RAM, including a new 709C E765 update.
+    assert(prepared.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    var physical_slot: int = Serializer.physical_slot_for_ix(original_ix)
 
     var result: Dictionary = Chain.advance_from_verified_7124_carry_source(
         prepared, original_car, original_ix,
