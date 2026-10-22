@@ -45,6 +45,7 @@ const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
 const CallbackFirst2EAF = preload("res://scripts/mechanics/ArcadeCallbackFirst2EAF.gd")
 const CallbackStatus3006 = preload("res://scripts/mechanics/ArcadeCallbackStatus3006.gd")
 const CallbackVector30D5 = preload("res://scripts/mechanics/ArcadeCallbackVector30D5.gd")
+const CallbackLinked85B4 = preload("res://scripts/mechanics/ArcadeCallbackLinked85B4.gd")
 
 var _failed: int = 0
 var _checks: int = 0
@@ -100,6 +101,7 @@ func _run_checks() -> void:
     _test_original_2b77_bus_trace()
     _test_original_2b77_hardware_memory_replay()
     _test_original_callback_engine_dispatch()
+    _test_original_callback_linked_85b4() 
     _test_original_7d65_smoothing_stage()
     _test_original_701a_gate_and_7017_fast_path()
     _test_original_7315_resume_equivalence()
@@ -2694,3 +2696,45 @@ func _test_original_callback_engine_dispatch() -> void:
                 vector["next_pc"] == 0xD958 and not vector["complete"] and
                 projection == original_projection,
                 "original 30D5 vector prep preserves exact swapped registers and flags")
+
+func _test_original_callback_linked_85b4() -> void:
+    for ix in CollisionRetry.CAR_POINTERS:
+        for flag in [0, 1]:
+            var ram: PackedByteArray = PackedByteArray()
+            ram.resize(CollisionRetry.LENGTH)
+            ram.fill(0)
+            CollisionRetry._set16(ram, ix + 0x7C, 0xE700)
+            CollisionRetry._set8(ram, ix + 0x04, 3)
+            CollisionRetry._set8(ram, ix + 0x31, flag)
+            CollisionRetry._set8(ram, ix + 0x7E, 0xA4)
+            CollisionRetry._set8(ram, 0xE71D, 1)
+            CollisionRetry._set16(ram, 0xE71E, 0xE8FF)
+            CollisionRetry._set8(ram, 0xE900, 0x78)
+            var before: PackedByteArray = ram.duplicate()
+            var result: Dictionary = CallbackLinked85B4.original_2eaf_through_85b4(
+                ram, ix)
+            var next_expected: int = 0x2ED0 if flag == 1 else 0x22B8
+            _verify(result["next_pc"] == next_expected and
+                    result["original_85b4"]["next_pc"] == 0x2EC7 and
+                    result["original_85b4"]["branch"] == "ret_full" and
+                    CollisionRetry.get8(result["ram"], 0xE71D) == 0x78 and
+                    CollisionRetry.get16(result["ram"], 0xE71E) == 0xE900 and
+                    CollisionRetry.get8(result["ram"], ix + 0x7E) == 0xB4 and
+                    not result["complete"] and ram == before,
+                    "original 2EAF→1783/85B4→2EC7 state and BIT0 return route")
+            CollisionRetry._set16(ram, 0xE71E, 0x203F)
+            var external: Dictionary = CallbackLinked85B4.original_85b4(ram, ix)
+            _verify(external["next_pc"] == 0x85D3 and
+                    external["branch"] == "requires_cpu_read" and
+                    CollisionRetry.get16(external["ram"], 0xE71E) == 0x2040 and
+                    not external["returned_to_2ec7"],
+                    "original 85B4 stops exactly before unavailable ROM table read")
+        var suppressed: PackedByteArray = PackedByteArray()
+        suppressed.resize(CollisionRetry.LENGTH)
+        suppressed.fill(0)
+        CollisionRetry._set8(suppressed, ix + 0x33, 2)
+        var early: Dictionary = CallbackLinked85B4.original_2eaf_through_85b4(
+            suppressed, ix)
+        _verify(early["next_pc"] == 0x2EB3 and early["complete"] and
+                early["ram"] == suppressed,
+                "original per-car callback disabled branch skips linked events")

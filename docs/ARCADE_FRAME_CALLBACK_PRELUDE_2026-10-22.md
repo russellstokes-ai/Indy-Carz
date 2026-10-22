@@ -46,3 +46,26 @@ MAME parity. No playable engine or build should be claimed from these tests.
 Do not change original circuit layouts or the portrait camera while extracting
 the complete master/slave/audio game engine. Never overwrite the protected
 canonical driving baseline with unverified mechanics.
+
+## Connected 1783→85B4 original linked-record continuation
+
+The original master bank0 `85B4–85D7` calls fixed-master `1783`,
+loads original IY from car IX+7C/7D, compares `(IY+1D)` to IX+04
+(unsigned), and either returns or toggles IX+7E bit4, increments the
+16-bit pointer stored at IY+1E/1F, and copies its pointed-to byte into
+IY+1D. Exact previous writes are retained if a required read is outside
+the available E000–FFFF RAM snapshot.
+
+Original window SHA-256 hashes (no bytes published):
+- `85B4–85D7`: `f92a4faf1c4d68ec956fef11b70190ebf0e7c52e0ba69c3c361060fb0fbfa7c7`
+- `1783–178C`: `8870020766664bfcd4f50d3ec074b7efdfe67570af6de15f5ca389121d686418`
+
+**100,000 further actual Z80 instruction comparisons, zero mismatches**:
+25,305 unsigned early returns, 28,006 full RAM-pointer updates and
+46,689 authentic stops at a CPU address requiring a different memory view.
+
+The public connected bounded path is now original
+`2EAF → CALL 85B4 → 1783 → 85B4 → 2EC7`, and checks the real
+IX+31 BIT0 to select the 22B8 call or reach 2ED0. It never fakes
+downstream callback behavior or master/slave frame scheduling. The
+original circuit, camera, and gameplay appearance remain untouched.
