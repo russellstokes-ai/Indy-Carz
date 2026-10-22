@@ -35,6 +35,7 @@ const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd
 const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
 const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
+const Bus2B77 = preload("res://scripts/mechanics/ArcadeDriveEvent2B77Bus.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -348,6 +349,7 @@ static func run_verified_original_slot_from_7017(
     var external_event: Dictionary = {}
     var external2: Dictionary = {}
     var event2ad6: Dictionary = {}
+    var event2b77: Dictionary = {}
     var pending_pc: int = -1
     if preflight["next_pc"] == Slow7049.ENTRY_PC:
         slow = Slow7049.apply_from_original_7049(
@@ -397,6 +399,14 @@ static func run_verified_original_slot_from_7017(
                 drive_ram,original_ix,banked_source)
             drive_ram = event2ad6["ram"]
             pending_pc = event2ad6["next_pc"]
+        if pending_pc == Bus2B77.ENTRY_PC:
+            # Trace the genuine 3 F4 bank writes and 8 ordered memory
+            # bus writes, but do NOT apply unknown QRAM hardware effects
+            # or falsely return to the driving caller.
+            event2b77 = Bus2B77.trace_after_original_2b77(
+                drive_ram,original_ix)
+            drive_ram = event2b77["ram"]
+            pending_pc = event2b77["next_pc"]
         if pending_pc != -1:
             return {
                 "ram": drive_ram, "complete": false,
@@ -408,8 +418,9 @@ static func run_verified_original_slot_from_7017(
                 "original_event_7ea3": external_event,
                 "original_external_2ad1": external2,
                 "original_event_2ad6": event2ad6,
+                "original_event_2b77": event2b77,
                 "pending_original_call": "%04X" % pending_pc,
-                "unverified_downstream": "original 0985/1767/2B77 banked event and collision effects"
+                "unverified_downstream": "original 0985/1767/2BCC F4/QRAM hardware effects"
             }
     else:
         assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
@@ -440,6 +451,7 @@ static func run_verified_original_slot_from_7017(
     result["original_event_7ea3"] = external_event
     result["original_external_2ad1"] = external2
     result["original_event_2ad6"] = event2ad6
+    result["original_event_2b77"] = event2b77
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]
