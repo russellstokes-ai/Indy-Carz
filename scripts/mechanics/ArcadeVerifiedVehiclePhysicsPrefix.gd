@@ -34,6 +34,7 @@ const Slow7049 = preload("res://scripts/mechanics/ArcadeDriveSlow7049.gd")
 const External7E5E = preload("res://scripts/mechanics/ArcadeDriveExternal7E5E.gd")
 const Event7EA3 = preload("res://scripts/mechanics/ArcadeDriveEvent7EA3.gd")
 const External2AD1 = preload("res://scripts/mechanics/ArcadeDriveExternal2AD1.gd")
+const Event2AD6 = preload("res://scripts/mechanics/ArcadeDriveEvent2AD6.gd")
 const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 const Special7D4C = preload("res://scripts/mechanics/ArcadeDriveSpecial7D4C.gd")
 const Smooth7D65 = preload("res://scripts/mechanics/ArcadeDriveSmooth7D65.gd")
@@ -278,7 +279,8 @@ static func run_verified_original_slot_from_7017(
         original_reverse_factor: int,
         steering_control_table_256: PackedByteArray,
         original_weighting_factor: int,
-        original_event_course_table: Variant = null) -> Dictionary:
+        original_event_course_table: Variant = null,
+        original_banked_event_source: Variant = null) -> Dictionary:
     ## Only an authenticated original 7017 entry may use this method.
     ## It loads the original car record ONCE, runs original CALL 75F2
     ## geometry checkpoint, then original 701A status gate.
@@ -335,12 +337,17 @@ static func run_verified_original_slot_from_7017(
     if original_event_course_table != null:
         assert(original_event_course_table is PackedByteArray)
         event_table = original_event_course_table
+    var banked_source: PackedByteArray = PackedByteArray()
+    if original_banked_event_source != null:
+        assert(original_banked_event_source is PackedByteArray)
+        banked_source = original_banked_event_source
     var drive_ram: PackedByteArray = preflight["ram"]
     var inherited_b: int = preflight["b"]
     var slow: Dictionary = {}
     var external: Dictionary = {}
     var external_event: Dictionary = {}
     var external2: Dictionary = {}
+    var event2ad6: Dictionary = {}
     var pending_pc: int = -1
     if preflight["next_pc"] == Slow7049.ENTRY_PC:
         slow = Slow7049.apply_from_original_7049(
@@ -383,6 +390,13 @@ static func run_verified_original_slot_from_7017(
             drive_ram = external2["ram"]
             pending_pc = (-1 if external2["next_pc"] ==
                 External2AD1.NORMAL_CALL_RETURN else External2AD1.OPAQUE_DISPATCH_PC)
+        if pending_pc == Event2AD6.ENTRY_PC:
+            # 2AD6 prepares four original E900 words, but the banked
+            # 2B77 F4/QRAM hardware continuation is still unverified.
+            event2ad6 = Event2AD6.apply_from_original_2ad6(
+                drive_ram,original_ix,banked_source)
+            drive_ram = event2ad6["ram"]
+            pending_pc = event2ad6["next_pc"]
         if pending_pc != -1:
             return {
                 "ram": drive_ram, "complete": false,
@@ -393,8 +407,9 @@ static func run_verified_original_slot_from_7017(
                 "original_external_7e5e": external,
                 "original_event_7ea3": external_event,
                 "original_external_2ad1": external2,
+                "original_event_2ad6": event2ad6,
                 "pending_original_call": "%04X" % pending_pc,
-                "unverified_downstream": "original 8022/1767/2AD6 event and collision effects"
+                "unverified_downstream": "original 0985/1767/2B77 banked event and collision effects"
             }
     else:
         assert(preflight["next_pc"] == Speed709C.ENTRY_PC)
@@ -424,6 +439,7 @@ static func run_verified_original_slot_from_7017(
     result["original_external_7e5e"] = external
     result["original_event_7ea3"] = external_event
     result["original_external_2ad1"] = external2
+    result["original_event_2ad6"] = event2ad6
     result["original_speed_709c"] = speed
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]
