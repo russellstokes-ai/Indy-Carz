@@ -19,6 +19,7 @@ const Correction = preload("res://scripts/mechanics/ArcadeDriveMotionCorrection.
 const Angular = preload("res://scripts/mechanics/ArcadeDriveAngularUpdate.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const DriveBC = preload("res://scripts/mechanics/ArcadeDriveControlSelector.gd")
+const Source7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
 const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage.gd")
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const Weighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
@@ -541,3 +542,27 @@ static func advance_using_verified_714e_selector(
     continuation["bc_selection"] = selected
     continuation["original_714e_bypass"] = false
     return continuation
+
+
+static func advance_from_verified_7124_carry_source(
+        master_ram: PackedByteArray,
+        physical_car: ArcadeCarRecord,
+        original_ix: int,
+        table_257: PackedByteArray,
+        inherited_b: int,
+        inherited_c: int,
+        direct_factor: int,
+        reverse_factor: int,
+        table_256: PackedByteArray,
+        weighting_factor: int) -> Dictionary:
+    ## 7124 writes E933 and produces carry; 714E consumes both.
+    ## No caller-supplied guess for carry; the original branch to
+    ## 7315 still skips the earlier acceleration calculations.
+    var prior: Dictionary = Source7124.apply_to_ram(master_ram)
+    var result: Dictionary = advance_using_verified_714e_selector(
+        prior["ram"], physical_car, original_ix, table_257,
+        prior["carry"], inherited_b, inherited_c,
+        direct_factor, reverse_factor, table_256, weighting_factor)
+    result["heading_source_7124"] = prior
+    result["used_carry"] = prior["carry"]
+    return result
