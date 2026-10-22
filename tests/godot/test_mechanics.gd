@@ -21,6 +21,8 @@ const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeighted
 const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
 const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoubleProjection.gd")
 const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
+const SecondProjection = preload("res://scripts/mechanics/ArcadeSteeringSecondProjection.gd")
+const SteeringDecay = preload("res://scripts/mechanics/ArcadeSteeringDecay.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -56,6 +58,7 @@ func _initialize() -> void:
     _test_connected_original_weighted_steering()
     _test_original_steering_control_73f6()
     _test_original_steering_7442_7463()
+    _test_original_steering_7499_74d8()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1187,6 +1190,131 @@ func _test_original_steering_7442_7463() -> void:
             normal["double_projection_7442"].is_empty() and
             normal["speed_limiter_7463"].is_empty(),
             "original 7315 normal route never fabricates extra steering corrections")
+
+
+func _test_original_steering_7499_74d8() -> void:
+    ## These are original bounded CPU stage outputs, not a game-wide
+    ## new physics timestep, throttle constant or tyre friction model.
+    var projection_golden: Array = [
+        # C, original car IX+00, E767, E769,
+        # output DE, unsigned slot1 B, 0B6B saturation
+        [64, 255, 28672, 0, 14336, 64, false],
+        [255, 255, 0, 0, 0, 127, false],
+        [127, 128, 65535, 0, 65532, 64, false],
+        [0, 255, 65534, 4096, 0, 0, false],
+        [200, 255, 32767, 65535, 32768, 99, true]
+    ]
+    for item in projection_golden:
+        var p: Dictionary = SecondProjection.calculate(
+            item[0],item[1],item[2],item[3])
+        _verify(p["de_projection"] == item[4] and
+                p["factor_b"] == item[5] and
+                p["overflow_saturated"] == item[6] and
+                p["next_pc"] == 0x74D8,
+                "original 7499 3-XROM and returning 0B6B saturation parity")
+        _verify(p["slot1_address"] == ((item[0] << 8) | item[1]),
+                "original 7499 unsigned slot1 multiplier address")
+        _verify(p["first_slot0_address"] >= 0 and
+                p["first_slot0_address"] <= 65535 and
+                p["second_slot0_address"] >= 0 and
+                p["second_slot0_address"] <= 65535,
+                "original 7499 separate signed slot0 XROM address domains")
+
+    var decay_golden: Array = [
+        # original projection, motion, E769, E767, IX+41, IX+31,
+        # final DE, updated E769, updated E767, new IX+41
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [8192, 0, 0, 0, 0, 0, 1408, 5632, 64128, 0],
+        [8192, 0, 0, 0, 1, 0, 5632, 2816, 59904, 0],
+        [12288, 4660, 44527, 64188, 3, 0, 5048, 47051, 59140, 2],
+        [32768, 65535, 65535, 1, 128, 1, 32768, 49151, 32769, 127],
+        [12288, 4660, 44527, 64188, 128, 0, 5048, 47051, 59140, 127],
+        [12288, 4660, 44527, 64188, 129, 0, 1262, 49576, 62926, 129]
+    ]
+    for item in decay_golden:
+        var d: Dictionary = SteeringDecay.calculate(
+            item[0],item[1],item[2],item[3],item[4],item[5])
+        _verify(d["final_de"] == item[6] and
+                d["e769"] == item[7] and
+                d["e767"] == item[8] and
+                d["car41"] == item[9] and
+                d["next_pc"] == 0x7530,
+                "original 74D8 16-bit signed steering decay and counter outputs")
+
+    # Important original DEC A; JP M status boundary: 0 and 129..255
+    # skip the countdown write, whereas 1..128 decrement the counter.
+    for car_counter in range(256):
+        var d: Dictionary = SteeringDecay.calculate(
+            0x3000,0x1234,0xADEF,0xFABC,car_counter,1)
+        var expected_write: bool = (((car_counter - 1) & 255) & 128) == 0
+        _verify(d["counter_decremented"] == expected_write and
+                d["car41"] == (((car_counter - 1) & 255)
+                    if expected_write else car_counter),
+                "original 74D8 signed 8-bit DEC A/JPM counter boundary")
+
+    # Execute the entire verified original motion/steering prefix on
+    # each of the five original car records with both bit0 limiter
+    # branches and key original countdown boundaries.
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        for status in [0, 1]:
+            for counter in [0, 1, 128, 129]:
+                var ram: PackedByteArray = PackedByteArray()
+                ram.resize(0x2000)
+                ram.fill(0)
+                CollisionRetry._set16(ram,0xE771,0x00FF)
+                CollisionRetry._set16(ram,0xE773,0x0200)
+                CollisionRetry._set16(ram,0xE789,0x0800)
+                CollisionRetry._set16(ram,0xE767,0xDFFE)
+                CollisionRetry._set16(ram,0xE769,0x1FFE)
+                CollisionRetry._set16(ram,0xE76B,0x7FFE)
+                ram[ix + 0x70 - 0xE000] = 130
+                ram[ix + 0x71 - 0xE000] = 21
+                ram[ix - 1 - 0xE000] = 255
+                ram[ix + 0x79 - 0xE000] = 0x80
+                ram[ix + 0x31 - 0xE000] = status
+                ram[ix + 0x41 - 0xE000] = counter
+                ram[ix + 0x00 - 0xE000] = 0xC1
+                ram[0xE600 - 0xE000] = 0xA6
+                var original_copy: PackedByteArray = ram.duplicate()
+                var car: ArcadeCarRecord = Car.new()
+                car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+                var result: Dictionary = MotionChain.advance_through_original_steering_decay(
+                    ram,car,ix,0,0,0,0,table,255)
+                _verify(result["next_pc"] == 0x7530 and
+                        result["verified_prefix_complete"] and result["complete"],
+                        "original connected 71C8-752F steering reaches original 7530")
+                _verify(result["second_projection_7499"]["next_pc"] == 0x74D8 and
+                        result["steering_decay_74d8"]["next_pc"] == 0x7530,
+                        "original 7499/74D8 stages remain in correct Z80 order")
+                _verify(CollisionRetry.get16(result["ram"],0xE769) ==
+                        result["steering_decay_74d8"]["e769"] and
+                        CollisionRetry.get16(result["ram"],0xE767) ==
+                        result["steering_decay_74d8"]["e767"] and
+                        CollisionRetry.get8(result["ram"],ix + 0x41) ==
+                        result["steering_decay_74d8"]["car41"],
+                        "original 74D8 RAM stores match isolated verified state")
+                _verify(ram == original_copy and
+                        CollisionRetry.get8(result["ram"],0xE600) == 0xA6,
+                        "connected original steering must preserve caller RAM and unrelated state")
+
+    # The normal 7315 original steering route bypasses ALL intermediate
+    # 7376–752F arithmetic, so its post-7499 fields MUST remain empty.
+    var normal_ram: PackedByteArray = PackedByteArray()
+    normal_ram.resize(0x2000)
+    normal_ram.fill(0)
+    CollisionRetry._set16(normal_ram,0xE771,0x0100)
+    CollisionRetry._set16(normal_ram,0xE773,0x0200)
+    var normal_car: ArcadeCarRecord = Car.new()
+    normal_car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+    var normal: Dictionary = MotionChain.advance_through_original_steering_decay(
+        normal_ram,normal_car,0xE080,0,0,0,0,table,255)
+    _verify(normal["next_pc"] == 0x7530 and
+            normal["second_projection_7499"].is_empty() and
+            normal["steering_decay_74d8"].is_empty(),
+            "original 7315 normal route skips the other steering stages")
 
 
 func _test_portrait_camera() -> void:
