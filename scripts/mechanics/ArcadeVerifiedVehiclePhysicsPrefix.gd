@@ -29,6 +29,8 @@ const Serializer = preload("res://scripts/mechanics/ArcadeScratchSerializer.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const Speed709C = preload("res://scripts/mechanics/ArcadeDriveSpeed709C.gd")
 const Carry7124 = preload("res://scripts/mechanics/ArcadeDriveCarryProjection.gd")
+const Gate701A = preload("res://scripts/mechanics/ArcadeDriveGate701A.gd")
+const Checkpoint75F2 = preload("res://scripts/mechanics/ArcadeCollisionGeometryCheckpoint.gd")
 
 const ORIGINAL_MOVE_START: int = 0x7530
 const ORIGINAL_FOOTPRINT_START: int = 0x7572
@@ -258,6 +260,70 @@ static func run_verified_original_slot_from_709c(
     result["inherited_714e_b"] = speed["b"]
     result["inherited_714e_c"] = real_projection["cos"]
     result["unverified_upstream"] = "original 7017–709B inputs, controls, timing and calls"
+    return result
+
+
+static func run_verified_original_slot_from_7017(
+        master_ram: PackedByteArray,
+        original_ix: int,
+        original_rom_2000_table_256: PackedByteArray,
+        original_control_window_257: PackedByteArray,
+        original_direct_factor: int,
+        original_reverse_factor: int,
+        steering_control_table_256: PackedByteArray,
+        original_weighting_factor: int) -> Dictionary:
+    ## Only an authenticated original 7017 entry may use this method.
+    ## It loads the original car record ONCE, runs original CALL 75F2
+    ## geometry checkpoint, then original 701A status gate.
+    ##
+    ## FAST 7036->709C branch resumes the fully proven per-car chain.
+    ## SLOW 7049 and external 7D4C branches stop and return partial state.
+    ## Original 7D4C and 7049 effects are NEVER guessed.
+    assert(master_ram.size() == State.LENGTH)
+    assert(State.CAR_POINTERS.has(original_ix))
+    var physical_slot: int = Serializer.physical_slot_for_ix(original_ix)
+    var loaded: PackedByteArray = Serializer.load_slot_to_scratch(master_ram,physical_slot)
+    var saved: Dictionary = Checkpoint75F2.snapshot(loaded)
+    var preflight: Dictionary = Gate701A.apply_after_75f2(saved["ram"],original_ix)
+
+    if preflight["next_pc"] != Speed709C.ENTRY_PC:
+        assert(preflight["next_pc"] in [Gate701A.SLOW_PC,Gate701A.OPAQUE_CALL_PC])
+        return {
+            "ram": preflight["ram"], "complete": false,
+            "next_pc": preflight["next_pc"], "physical_slot": physical_slot,
+            "scratch_loaded": true, "scratch_saved": false,
+            "checkpoint_75f2": saved, "preflight_701a": preflight,
+            "original_speed_709c": {},
+            "unverified_downstream": (
+                "original external 7D4C call" if preflight["next_pc"] == Gate701A.OPAQUE_CALL_PC
+                else "original 7049–709B control update")
+        }
+
+    # Original IX-1D may have been incremented by the 7036 branch.
+    # Construct this original physical car view AFTER that write.
+    var physical_bytes: PackedByteArray = preflight["ram"].slice(
+        physical_slot - State.BASE,
+        physical_slot - State.BASE + Serializer.ORIGINAL_SLOT_LENGTH)
+    var original_car: ArcadeCarRecord = Car.new(physical_bytes)
+    var speed: Dictionary = Speed709C.apply_original_709c(
+        preflight["ram"],original_car,preflight["b"],original_rom_2000_table_256)
+    var real_projection: Dictionary = Carry7124.calculate(
+        State.get8(speed["ram"],Carry7124.HEADING),
+        State.get16(speed["ram"],Carry7124.ANGULAR_WORD),
+        State.get16(speed["ram"],Carry7124.MOTION_WORD))
+
+    var result: Dictionary = _finish_loaded_original_slot_from_7124(
+        speed["ram"],original_car,original_ix,
+        original_control_window_257,
+        speed["b"],real_projection["cos"],
+        original_direct_factor,original_reverse_factor,
+        steering_control_table_256,original_weighting_factor)
+    result["checkpoint_75f2"] = saved
+    result["preflight_701a"] = preflight
+    result["original_speed_709c"] = speed
+    result["inherited_714e_b"] = speed["b"]
+    result["inherited_714e_c"] = real_projection["cos"]
+    result["unverified_upstream"] = "original selection/callbacks before 7017"
     return result
 
 

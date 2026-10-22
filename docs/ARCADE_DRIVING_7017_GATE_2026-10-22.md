@@ -1,0 +1,34 @@
+# Original 7017 checkpoint and 701A–7048 per-car control gate
+
+**22 October 2026 — bounded original 1991 arcade CPU recovery.**
+
+The original master Z80 enters `7017` by calling `75F2`, which snapshots eleven collision/geometry backup words, then continues at `701A`. The previously verified 75F2 stage is now connected to the newly recovered original 701A branch logic. The original master bytes came from the owner's **private, checksum-authenticated** archived listing; original executable bytes and assets are not in this public repository.
+
+## Original instruction-exact routes
+
+`tools/arcade_drive_701a_control.py` interprets the real original 701A–7048 Z80 opcodes, independently compared with a separate branch/arithmetic model across **100,000 cases, zero mismatches**:
+
+| Condition after authentic `75F2` return | Original result | Cases |
+| --- | --- | ---: |
+| `IX+5C` bit 0 set | Stop at original external `CALL 7D4C`; its side effects/return remain unresolved | 33,334 |
+| Otherwise `IX+31` bit 4 or `IX+33` bit 0 set | Increment `IX-1D` modulo 256, multiply original `IX+57` by `0x60` using the *known exact* X-ROM slot1-low byte, set original B and continue at `709C` | 33,333 |
+| Neither flag set | Set original `IX-1D` to zero and stop at unverified PC `7049` | 33,333 |
+
+The external `7D4C` call is **not** represented as an immediate return or fictitious `JP 7572`. The slow `7049` route likewise has no guessed downstream effects. Original per-car offsets refer to the physical `IX` pointer, not a generic vehicle acceleration model.
+
+## Connected Godot pipeline
+
+`ArcadeDriveGate701A.gd` reproduces these bounded original input decisions. `ArcadeVerifiedVehiclePhysicsPrefix.run_verified_original_slot_from_7017` now:
+
+1. Loads the original selected physical car's 48 scratch words **once**;
+2. Runs real `75F2` geometry checkpoint before the `701A` gate;
+3. On the authentic fast branch, carries original B to the recovered `709C` speed stage and then continues the already verified `7124→714E→71C8/7315→7530→7572→75F1` geometry/storeback chain;
+4. On the other two branches, returns their correct original next PC, preserved RAM and explicit unresolved state, without a fabricated scratch save.
+
+Tests independently compose the staged original operations for **all five physical slots**, verify source RAM is not mutated, test `IX-1D` counter wrap and fast-branch X-ROM rounding, and ensure deferred original branches fail closed.
+
+## Still open
+
+True earlier full `601E` callback scheduling and control sources, the `7049–709B` slow branch including its external calls, complete `7D4C` behaviour, real MAME full-frame input-output parity, steering table provenance, AI, collision/terrain consequences, fourteen dynamic circuit QRAM maps, pits/fuel/turbo, championship, audio and Android release. Original circuits and approved camera remain unchanged.
+
+This is an extension of authentic arcade arithmetic and branching, **not a completed game or Android APK**.
