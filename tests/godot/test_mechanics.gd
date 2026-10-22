@@ -19,6 +19,8 @@ const Steering7315 = preload("res://scripts/mechanics/ArcadeSteeringAngularStage
 const SteeringLookup = preload("res://scripts/mechanics/ArcadeSteeringLookupStage.gd")
 const SteeringWeighted = preload("res://scripts/mechanics/ArcadeSteeringWeightedInput.gd")
 const SteeringControl = preload("res://scripts/mechanics/ArcadeSteeringControlAngle.gd")
+const DoubleProjection = preload("res://scripts/mechanics/ArcadeSteeringDoubleProjection.gd")
+const SpeedLimiter = preload("res://scripts/mechanics/ArcadeSteeringSpeedLimiter.gd")
 const Car = preload("res://scripts/mechanics/ArcadeCarRecord.gd")
 const InputBridge = preload("res://scripts/mechanics/ArcadeInputBridge.gd")
 const PortraitCamera = preload("res://scripts/camera/ArcadePortraitCamera.gd")
@@ -53,6 +55,7 @@ func _initialize() -> void:
     _test_original_weighted_steering_73cd()
     _test_connected_original_weighted_steering()
     _test_original_steering_control_73f6()
+    _test_original_steering_7442_7463()
     _test_portrait_camera()
 
     if _failed > 0:
@@ -1081,6 +1084,109 @@ func _test_original_steering_control_73f6() -> void:
         _verify(normal["complete"] and normal["next_pc"] == 0x7530 and
                 normal["steering_control_73f6"].is_empty(),
                 "original 7315 normal route bypasses unneeded steering control")
+
+
+func _test_original_steering_7442_7463() -> void:
+    ## Exact original 7442 signed XROM, 7463 speed limiter, output PC 7499.
+    ## The weighted byte comes from the preceding original 73CD AF stack.
+    var cases: Array = [
+        # original A, IX+79, saved weighted byte, IX+31,
+        # original correction, continuation PC
+        [64, 0, 0, 0, 0, 0x7463],
+        [64, 0, 0, 1, 0, 0x748A],
+        [32, 127, 127, 0, 3937, 0x7463],
+        [127, 128, 255, 0, 254, 0x7463],
+        [32, 255, 128, 1, 65408, 0x748A],
+        [127, 255, 255, 0, 65282, 0x7463],
+        [64, 128, 128, 0, 57344, 0x7463],
+        [127, 127, 127, 255, 16002, 0x748A]
+    ]
+    for inputs in cases:
+        var stage: Dictionary = DoubleProjection.calculate(
+            inputs[0], inputs[1], inputs[2], inputs[3])
+        _verify(stage["correction"] == inputs[4] and
+                stage["next_pc"] == inputs[5],
+                "original 7442 double XROM signed product and byte boundary")
+        _verify(stage["skip_velocity_limiter"] == ((inputs[3] & 1) != 0),
+                "original indexed IX+31 bit0 chooses 7463 vs 748A")
+        _verify(stage["first_xrom_address"] == ((inputs[1] << 8) | inputs[0]),
+                "original 7442 first signed XROM operand address")
+
+    var limit_cases: Array = [
+        [0,0,0,0,0,0],
+        [65535,0,0,0,65535,65535],
+        [0x1234,0,0xFFFF,0,0x1234,0x1233],
+        [0x8000,65535,0,0,0x8000,0x8000],
+        [0x3000,0x1234,0xADEF,0,5049,49576],
+        [0xFF00,0x8000,0x0102,0,0xFF00,2],
+        [0x8000,0x1000,0xFFFF,1,0x8000,0x7FFF]
+    ]
+    for values in limit_cases:
+        var result: Dictionary = SpeedLimiter.calculate(
+            values[0],values[1],values[2],values[3])
+        _verify(result["car4c4d"] == values[4] and
+                result["heading_e767"] == values[5] and
+                result["next_pc"] == 0x7499,
+                "original 7463 inherited-carry speed limit and E767 update")
+        _verify(result["limiter_bypassed"] == ((values[3] & 1) != 0),
+                "original 7463/748A bit0 skip matches Z80 branch")
+
+    var table: PackedByteArray = PackedByteArray()
+    for i in range(256):
+        table.append((i * 57 + 113) & 255)
+    for ix in CollisionRetry.CAR_POINTERS:
+        for bypass_status in [0, 1]:
+            var memory: PackedByteArray = PackedByteArray()
+            memory.resize(0x2000)
+            memory.fill(0)
+            CollisionRetry._set16(memory,0xE771,0x00FF)
+            CollisionRetry._set16(memory,0xE773,0x0200)
+            CollisionRetry._set16(memory,0xE789,0x0800)
+            CollisionRetry._set16(memory,0xE767,0xDFFE)
+            CollisionRetry._set16(memory,0xE76B,0x7FFE)
+            memory[ix + 0x70 - 0xE000] = 130
+            memory[ix + 0x71 - 0xE000] = 21
+            memory[ix - 1 - 0xE000] = 255
+            memory[ix + 0x79 - 0xE000] = 0x80
+            memory[ix + 0x31 - 0xE000] = bypass_status
+            memory[0xE600 - 0xE000] = 0xA5
+            var car: ArcadeCarRecord = Car.new()
+            car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+
+            var before: PackedByteArray = memory.duplicate()
+            var after: Dictionary = MotionChain.advance_through_original_steering_speed_limit(
+                memory,car,ix,0,0,0,0,table,255)
+            _verify(after["verified_prefix_complete"] and
+                    not after["complete"] and after["next_pc"] == 0x7499,
+                    "original connected physics proceeds through 7442 to 7499")
+            _verify(after["double_projection_7442"]["next_pc"] ==
+                    (0x748A if bypass_status == 1 else 0x7463),
+                    "real car IX+31 steering limiter branch preserved")
+            var limited: Dictionary = after["speed_limiter_7463"]
+            _verify(limited["limiter_bypassed"] == (bypass_status == 1) and
+                    CollisionRetry.get16(after["ram"],ix + 0x4C) == limited["car4c4d"] and
+                    CollisionRetry.get16(after["ram"],0xE767) == limited["heading_e767"],
+                    "original signed projection stored to physical car+CC and shared E767")
+            _verify(memory == before and car.read_u8(Car.FIELD_PEDAL_RESPONSE) == 16,
+                    "connected original steering never mutates caller inputs")
+            _verify(CollisionRetry.get8(after["ram"],0xE600) == 0xA5,
+                    "original 7442/7463 leaves unrelated shared RAM unchanged")
+
+    ## Original 7315 normal steering branch jumps to 7530, skipping
+    ## 7376/73CD/73F6/7442/7463 entirely.
+    var normal_ram: PackedByteArray = PackedByteArray()
+    normal_ram.resize(0x2000)
+    normal_ram.fill(0)
+    CollisionRetry._set16(normal_ram,0xE771,0x0100)
+    CollisionRetry._set16(normal_ram,0xE773,0x0200)
+    var normal_car: ArcadeCarRecord = Car.new()
+    normal_car.write_u8(Car.FIELD_PEDAL_RESPONSE,16)
+    var normal: Dictionary = MotionChain.advance_through_original_steering_speed_limit(
+        normal_ram,normal_car,0xE080,0,0,0,0,table,255)
+    _verify(normal["next_pc"] == 0x7530 and
+            normal["double_projection_7442"].is_empty() and
+            normal["speed_limiter_7463"].is_empty(),
+            "original 7315 normal route never fabricates extra steering corrections")
 
 
 func _test_portrait_camera() -> void:
